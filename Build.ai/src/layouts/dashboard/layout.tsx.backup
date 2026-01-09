@@ -1,0 +1,139 @@
+import type { Theme, SxProps, Breakpoint } from '@mui/material/styles';
+
+// import { useState } from 'react';
+
+import Box from '@mui/material/Box';
+// import Alert from '@mui/material/Alert';
+// import { useTheme } from '@mui/material/styles';
+
+import { _langs } from 'src/_mock';
+
+import { Iconify } from 'src/components/iconify';
+import { Button } from '@mui/material';
+import { Inventory } from '@mui/icons-material';
+
+// import { layoutClasses } from '../classes';
+// import { NavMobile, NavDesktop } from './nav';
+// import { navData } from '../config-nav-dashboard';
+// import { Searchbar } from '../components/searchbar';
+// import { _workspaces } from '../config-nav-workspace';
+
+import { Main } from './main';
+import { LayoutSection } from '../core/layout-section';
+import { HeaderSection } from '../core/header-section';
+import { AccountPopover } from '../components/account-popover';
+import { LanguagePopover } from '../components/language-popover';
+import { NavigationPopover } from '../components/navigation-popover';
+
+// ----------------------------------------------------------------------
+
+export type DashboardLayoutProps = {
+  sx?: SxProps<Theme>;
+  children: React.ReactNode;
+  header?: {
+    sx?: SxProps<Theme>;
+  };
+};
+
+export function DashboardLayout({ sx, children, header }: DashboardLayoutProps) {
+  // const theme = useTheme();
+
+  // const [navOpen, setNavOpen] = useState(false);
+
+  const layoutQuery: Breakpoint = 'lg';
+
+  function getButtonStyles(arg0: string): SxProps<Theme> | undefined {
+    throw new Error('Function not implemented.');
+  }
+
+  return (
+    <LayoutSection
+      /** **************************************
+       * First Header
+       *************************************** */
+      headerSection={
+        <HeaderSection
+          layoutQuery={layoutQuery}
+          slotProps={{
+            container: {
+              maxWidth: false,
+              sx: { px: { [layoutQuery]: 0 } },
+            },
+          }}
+          sx={header?.sx}
+          slots={{
+            leftArea: (
+              <Box gap={1} display="flex" alignItems="center">
+                {/* Add your logo image here */}
+                <Box
+                  component="img"
+                  src="/FullLogo.png" // Replace with your logo path
+                  alt="Logo"
+                  sx={{
+                    height: 100, // Adjust size as needed
+                    width: 'auto',
+                    mr: 2, // Margin right to separate from other elements
+                  }}
+                />
+              </Box>
+            ),
+            rightArea: (
+              <Box gap={1} display="flex" alignItems="center">
+                {/* <Searchbar /> */}
+                <LanguagePopover data={_langs} />
+                {/* <NotificationsPopover data={_notifications} /> */}
+                <AccountPopover
+                  data={[
+                    {
+                      label: 'Home',
+                      href: '/',
+                      icon: <Iconify width={22} icon="solar:home-angle-bold-duotone" />,
+                    },
+                    {
+                      label: 'Profile',
+                      href: '#',
+                      icon: <Iconify width={22} icon="solar:shield-keyhole-bold-duotone" />,
+                    },
+                    {
+                      label: 'Settings',
+                      href: '#',
+                      icon: <Iconify width={22} icon="solar:settings-bold-duotone" />,
+                    },
+                  ]}
+                />
+              </Box>
+            ),
+          }}
+        />
+      }
+      navigationSection={
+        <HeaderSection
+          layoutQuery={layoutQuery}
+          slotProps={{
+            container: {
+              maxWidth: false,
+              sx: { px: { [layoutQuery]: 0 } },
+            },
+          }}
+          sx={header?.sx}
+          slots={{
+            leftArea: (
+              <Box>
+                <NavigationPopover />
+              </Box>
+            ),
+          }}
+        />
+      }
+
+      sx={{
+        height: '100vh', // Ensure full height
+        display: 'flex', // Use flexbox for layout
+        flexDirection: 'column', // Stack children vertically
+        ...sx,
+      }}
+    >
+      <Main style={{ flex: 1 }}>{children}</Main> {/* Ensure Main takes up remaining space */}
+    </LayoutSection>
+  );
+}

@@ -1,0 +1,156 @@
+import React, { useRef, useState, useEffect } from 'react';
+import axios from 'axios';
+import ReactMarkdown from 'react-markdown';
+import labels from 'src/sections/locales/language.json';
+import { saveAs } from 'file-saver';
+import XLSX from 'xlsx';
+
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Card from '@mui/material/Card';
+import CircularProgress from '@mui/material/CircularProgress';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
+import 'src/theme/styles/tableStyle.css';
+import LoadingComponent from '../loader/loader';
+
+interface ChatMessage {
+  sender: 'user' | 'bot';
+  text?: string;
+  tableData?: any[];
+}
+
+const apiMappings: { [key: string]: string } = {
+  'top 10 sims by bill': 'http://localhost:8000/top-charged-sims',
+  'top rate plan by usage': 'http://localhost:8000/total-usage-per-plan',
+  'top network by usage': 'http://localhost:8000/aggregate-usage',
+  'total bill': 'http://localhost:8000/billing-total',
+  'total sims': 'http://localhost:8000/sim-total',
+  'billing summary': 'http://localhost:8000/billing-summary',
+};
+
+const suggestedQuestions = [
+  'Top 10 sims by bill',
+  'Top rate plan by usage',
+  'Top network by usage',
+  'Total bill',
+  'Total SIMs',
+  'Billing summary',
+];
+
+const loadingMessages = [
+  'We are analysing...',
+  'Forming a query...',
+  'Now retrieving data...',
+  'Here is the response',
+];
+
+export function AIChatbot() {
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [userInput, setUserInput] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const chatContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    chatContainerRef.current?.scrollTo({
+      top: chatContainerRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [chatMessages]);
+
+  const exportChatHistory = () => {
+    const data = chatMessages.map((msg, index) => ({
+      Sender: msg.sender,
+      Message: msg.text || '',
+      TableData: msg.tableData ? JSON.stringify(msg.tableData) : '',
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'ChatHistory');
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
+    saveAs(blob, 'ChatHistory.xlsx');
+  };
+
+  const handleQuerySubmit = async (input: string): Promise<void> => {
+    if (!input.trim()) return;
+
+    setChatMessages((prev) => [...prev, { sender: 'user', text: input }]);
+    setUserInput('');
+    setIsLoading(true);
+
+    try {
+      if (apiMappings[input.toLowerCase()]) {
+        const response = await axios.get(apiMappings[input.toLowerCase()]);
+        setChatMessages((prev) => [...prev, { sender: 'bot', tableData: response.data }]);
+      } else {
+        const response = await fetch('http://localhost:8000/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: input }),
+        });
+
+        if (!response.body) throw new Error('No response body from server.');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let botMessage = '';
+
+        setChatMessages((prev) => [...prev, { sender: 'bot', text: '' }]);
+
+        const updateMessage = (text: string) => {
+          setChatMessages((prev) => {
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage && lastMessage.sender === 'bot') {
+              return [...prev.slice(0, -1), { sender: 'bot', text }];
+            }
+            return prev;
+          });
+        };
+        const processStream = async () => {
+          const { done, value } = await reader.read();
+          if (done) return;
+          const text = decoder.decode(value, { stream: true });
+          botMessage += text;
+          updateMessage(botMessage);
+          try {
+            const tableData = JSON.parse(botMessage).response;
+            setChatMessages((prev) => [...prev.slice(0, -1), { sender: 'bot', tableData }]);
+          } catch (error) {
+            console.error('Error parsing bot message:', error);
+          }          
+          await processStream();
+        };
+
+        await processStream();
+        reader.releaseLock();
+      }
+    } catch {
+      setChatMessages((prev) => [...prev, { sender: 'bot', text: 'An error occurred. Please try again.' }]);
+    }
+    setIsLoading(false);
+  };
+
+  return (
+    <Card sx={{ p: 3, mt: 1 }}>
+      <Typography variant="h6" sx={{ mb: 1, pt: 0 }}>
+        Billing AI Chatbot
+      </Typography>
+      <Box sx={{ maxHeight: '400px', overflowY: 'auto', mb: 2 }} ref={chatContainerRef}>
+        {chatMessages.map((msg, index) => (
+          <Box key={index} sx={{ textAlign: msg.sender === 'user' ? 'right' : 'left', mb: 2 }}>
+            {msg.text && <Box sx={{ display: 'inline-block', p: 2, borderRadius: 1, maxWidth: '80%', whiteSpace: 'pre-wrap', wordBreak: 'break-word', bgcolor: msg.sender === 'user' ? '#e3f2fd' : '#f5f5f5' }}>
+              <ReactMarkdown>{msg.text}</ReactMarkdown>
+            </Box>}
+          </Box>
+        ))}
+        <LoadingComponent isLoading={isLoading} loadingMessages={loadingMessages} />
+      </Box>
+      <Button variant="contained" onClick={exportChatHistory} sx={{ mb: 2 }}>
+        Export Chat History
+      </Button>
+    </Card>
+  );
+}
+

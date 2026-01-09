@@ -1,0 +1,62 @@
+DROP TABLE IF EXISTS cdr_data;
+
+DROP TABLE IF EXISTS billing_table;
+
+DROP TABLE IF EXISTS wholesale_plan;
+
+DROP TABLE IF EXISTS account_info;
+
+DROP TABLE IF EXISTS rate_plan;
+
+CREATE TABLE IF NOT EXISTS cdr_data (
+		sim_id VARCHAR(50) NOT NULL,
+		data_usage INT,
+		network VARCHAR(50),
+		timestamp TIMESTAMP,
+		country VARCHAR(50)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sim_id ON cdr_data(sim_id);
+CREATE INDEX IF NOT EXISTS idx_timestamp ON cdr_data(timestamp);
+
+CREATE TABLE IF NOT EXISTS billing_data (
+    sim_id VARCHAR(50) NOT NULL,
+	account_name VARCHAR(255) NOT NULL,
+    rate_plan VARCHAR(50),
+	bundle_allowance INT,
+    total_usage INT,
+    usage_from_plan INT,
+    bundle_fee NUMERIC(10, 2),
+    usage_out_of_bundle INT,
+    charges_out_of_bundle NUMERIC(10, 2),
+    total_bill NUMERIC(10, 2),
+	billing_cycle VARCHAR(20)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sim_id ON billing_data(sim_id);
+CREATE INDEX IF NOT EXISTS idx_rate_plan ON billing_data(rate_plan);
+CREATE INDEX IF NOT EXISTS idx_total_usage ON billing_data(total_usage);
+
+CREATE TABLE account_info (
+    account_name VARCHAR(255) NOT NULL,
+    sim_id VARCHAR(50) NOT NULL,
+    rate_plan VARCHAR(50) NOT NULL,
+	billing_cycle VARCHAR(20)
+);
+
+CREATE TABLE rate_plan (
+	rate_plan VARCHAR(50) NOT NULL,
+    bundle_allowance INT,
+    bundle_fee NUMERIC(10, 2),
+	home_rate NUMERIC(10,2),
+	row_rate NUMERIC(10,2)
+);
+
+CREATE TABLE wholesale_plan (
+    wholesale_plan_name VARCHAR(255) PRIMARY KEY,
+    allowance INT,
+    plan_type VARCHAR(50),
+    fee NUMERIC(10, 2),
+    out_of_bundle_rate_home NUMERIC(10, 2),
+    out_of_bundle_rate_roaming NUMERIC(10, 2)
+);

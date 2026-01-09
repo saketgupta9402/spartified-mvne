@@ -1,0 +1,28 @@
+{
+    "labels": {
+        "data_usage": "Data Usage (GB)",
+        "active_users": "Active Users",
+        "new_signups": "New Signups",
+        "page_views": "Page Views",
+        "total_usage": "Total Usage",
+        "network": "Network",
+        "bill_total": "Total Bill ($)",
+        "sim_total": "Total SIMs",
+        "billing_summary": "Billing Summary",
+        "total_sims": "Total SIMs",
+        "top_charged_sims": "Top Charged SIMs",
+        "total_usage_per_plan": "Total Usage Per Plan",
+        "aggregate_usage": "Aggregate Usage",
+        "billing_total": "Billing Total",
+        "cdr_records_history": "CDR Records History",
+        "account_name": "Account Name",
+        "sim_id": "Sim ID",
+        "rate_plan": "Rate Plan",
+        "total_usage_gb": "Total Usage (GB)",
+        "total_bill": "Total Bill ($)",
+        "billing_cycle": "Billing Cycle",
+        "num_sims": "Total Sims",
+        "number_of_sims": "Total Sims",
+        "total_oob_usage": "Out-of-bundle Usage"
+    }
+}
