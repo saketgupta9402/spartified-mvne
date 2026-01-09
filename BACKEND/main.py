@@ -2,6 +2,7 @@ from dateutil.relativedelta import relativedelta
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List, Optional, Dict, Any, Union
 from fastapi.responses import StreamingResponse, PlainTextResponse
 import os
 from dotenv import load_dotenv
@@ -298,13 +299,118 @@ class RatePlan(BaseModel):
     row_rate: float
 
 
+class WholesaleEntity(BaseModel):
+    id: Optional[int]
+    name: str
+    type: Optional[str]
+    country: Optional[str]
+    currency: Optional[str] = "USD"
+    status: Optional[str] = "active"
+
 class WholesalePlan(BaseModel):
-    wholesale_plan_name: str
-    allowance: int
-    plan_type: str
-    fee: float
-    out_of_bundle_rate_home: float
-    out_of_bundle_rate_roaming: float
+    id: Optional[int]
+    entity_id: int
+    plan_name: Optional[str]
+    plan_type: Optional[str]
+    start_date: Optional[datetime.date]
+    end_date: Optional[datetime.date]
+    revenue_share_pct: Optional[float]
+
+class ServiceRate(BaseModel):
+    id: Optional[int]
+    plan_id: int
+    service_type: Optional[str]
+    rate_per_unit: Optional[float]
+    unit: Optional[str]
+    overage_rate: Optional[float]
+
+class PlanAllowance(BaseModel):
+    id: Optional[int]
+    plan_id: int
+    service_type: Optional[str]
+    allowance_amount: Optional[float]
+    allowance_unit: Optional[str]
+    period: Optional[str] = "monthly"
+
+class MonthlyConsumption(BaseModel):
+    id: Optional[int]
+    entity_id: int
+    plan_id: int
+    year_month: Optional[str]
+    voice_minutes_used: Optional[int]
+    sms_count: Optional[int]
+    data_gb_used: Optional[float]
+
+class WholesaleBillingCycle(BaseModel):
+    id: Optional[int]
+    entity_id: int
+    cycle_start_date: Optional[datetime.date]
+    cycle_end_date: Optional[datetime.date]
+    billing_period: Optional[str]
+    status: Optional[str]
+    total_amount: Optional[float]
+
+class WholesaleBillingRecord(BaseModel):
+    id: Optional[int]
+    entity_id: int
+    plan_id: int
+    billing_cycle_id: int
+    year_month: Optional[str]
+    service_type: Optional[str]
+    allowance_amount: Optional[float]
+    usage_amount: Optional[float]
+    billable_amount: Optional[float]
+    rate_applied: Optional[float]
+    line_item_amount: Optional[float]
+
+class WholesaleBillingSummary(BaseModel):
+    id: Optional[int]
+    entity_id: int
+    year_month: Optional[str]
+    total_base_cost: Optional[float]
+    total_overage_cost: Optional[float]
+    grand_total: Optional[float]
+    invoice_status: Optional[str]
+
+class DashboardMetrics(BaseModel):
+    billing_cycle: str
+    metric_date: datetime.date
+    total_revenue: float
+    gross_profit: float
+    net_profit: float
+    total_opex: float
+    total_cogs: float
+    active_accounts: int
+    active_sims: int
+    new_accounts: int
+    lost_accounts: int
+    total_usage_gb: float
+    avg_cogs_per_account: float
+    avg_opex_per_account: float
+    accounts_receivable: float
+
+class PerformanceAnalytics(BaseModel):
+    billing_cycle: str
+    metric_date: datetime.date
+    account_name: str
+    account_segment: str
+    payment_performance_score: float
+    churn_risk_score: float
+    dispute_resolution_days: float
+    avg_revenue_per_sim: float
+    total_revenue: float
+    profitability_score: int
+    credit_utilization_percent: float
+    discount_usage_percent: float
+    avg_discount_rate: float
+    discount_sensitivity: str
+    optimal_discount_rate: float
+    q3_forecast: float
+    q4_forecast: float
+    yoy_growth_forecast: float
+    forecast_confidence_level: float
+    total_sims: int
+    total_usage_mb: int
 
 
 class KnowledgeBaseRequest(BaseModel):
@@ -655,6 +761,14 @@ def generate_sql_query(
     - `rate_plan(rate_plan, bundle_allowance, bundle_fee, home_rate, row_rate)`
     - `dashboard_metrics(billing_cycle, metric_date, total_revenue, gross_profit, net_profit, total_opex, total_cogs, active_accounts, active_sims, new_accounts, lost_accounts, total_usage_gb, avg_cogs_per_account, avg_opex_per_account, accounts_receivable)`
     - `performance_analytics(billing_cycle, metric_date, account_name, account_segment, payment_performance_score, churn_risk_score, dispute_resolution_days, avg_revenue_per_sim, total_revenue, profitability_score, credit_utilization_percent, discount_usage_percent, avg_discount_rate, discount_sensitivity, optimal_discount_rate, q3_forecast, q4_forecast, yoy_growth_forecast, forecast_confidence_level, total_sims, total_usage_mb)`
+    - `wholesale_entities(id, name, type, country, currency, status)`
+    - `wholesale_plans(id, entity_id, plan_name, plan_type, start_date, end_date, revenue_share_pct)`
+    - `service_rates(id, plan_id, service_type, rate_per_unit, unit, overage_rate)`
+    - `plan_allowances(id, plan_id, service_type, allowance_amount, allowance_unit, period)`
+    - `monthly_consumption(id, entity_id, plan_id, year_month, voice_minutes_used, sms_count, data_gb_used)`
+    - `wholesale_billing_cycles(id, entity_id, cycle_start_date, cycle_end_date, billing_period, status, total_amount)`
+    - `wholesale_billing_records(id, entity_id, plan_id, billing_cycle_id, year_month, service_type, allowance_amount, usage_amount, billable_amount, rate_applied, line_item_amount)`
+    - `wholesale_billing_summary(id, entity_id, year_month, total_base_cost, total_overage_cost, grand_total, invoice_status)`
 
     **Rules:**
     - `billing_cycle` is a `character varying` column in 'YYYY-MM' format (e.g., '2025-01'). Compare it directly without TO_CHAR.
@@ -1767,17 +1881,39 @@ async def get_wholesale_plans(
 ):
     try:
         with engine.connect() as conn:
-            query = "SELECT * FROM wholesale_plan WHERE 1=1"
+            # Query with subqueries to map new schema to legacy format
+            query = """
+                SELECT 
+                    p.id,
+                    p.plan_name as wholesale_plan_name, 
+                    p.plan_type,
+                    COALESCE((SELECT allowance_amount FROM plan_allowances pa WHERE pa.plan_id = p.id AND pa.service_type = 'data_domestic' LIMIT 1), 0) as allowance,
+                    0.0 as fee,
+                    COALESCE((SELECT overage_rate FROM service_rates sr WHERE sr.plan_id = p.id AND sr.service_type = 'data_domestic' LIMIT 1), 0.0) as out_of_bundle_rate_home,
+                    0.0 as out_of_bundle_rate_roaming
+                FROM wholesale_plans p 
+                WHERE 1=1
+            """
             params = {}
+
+            # Map legacy column names to new schema
+            db_search_field = search_field
+            if search_field == "wholesale_plan_name":
+                db_search_field = "plan_name"
+            
+            db_sort_by = sort_by
+            if sort_by == "wholesale_plan_name":
+                db_sort_by = "plan_name"
 
             if search:
                 if filter_type == "exact":
-                    query += f" AND {search_field} = :search"
+                    query += f" AND {db_search_field} = :search"
+                    params["search"] = search
                 else:
-                    query += f" AND LOWER({search_field}) LIKE :search"
+                    query += f" AND LOWER({db_search_field}) LIKE :search"
                     params["search"] = f"%{search.lower()}%"
 
-            query += f" ORDER BY {sort_by} {sort_order}"
+            query += f" ORDER BY {db_sort_by} {sort_order}"
             query += " LIMIT :limit OFFSET :offset"
             params["limit"] = limit
             params["offset"] = (page - 1) * limit
@@ -1785,12 +1921,12 @@ async def get_wholesale_plans(
             result = pd.read_sql_query(text(query), conn, params=params)
             data = result.to_dict(orient="records")
 
-            count_query = "SELECT COUNT(*) as total FROM wholesale_plan WHERE 1=1"
+            count_query = "SELECT COUNT(*) as total FROM wholesale_plans WHERE 1=1"
             if search:
                 if filter_type == "exact":
-                    count_query += f" AND {search_field} = :search"
+                    count_query += f" AND {db_search_field} = :search"
                 else:
-                    count_query += f" AND LOWER({search_field}) LIKE :search"
+                    count_query += f" AND LOWER({db_search_field}) LIKE :search"
             total = conn.execute(text(count_query), params).scalar()
 
             return {"data": data, "total": total}
@@ -1886,8 +2022,9 @@ async def get_sim_mapping(
     try:
         with engine.connect() as conn:
             query = """
-                SELECT bd.account_name, bd.sim_id, bd.rate_plan as retail_plan, bd.total_usage, bd.billing_cycle, bd.wholesale_plan
+                SELECT bd.account_name, bd.sim_id, bd.rate_plan as retail_plan, bd.total_usage, bd.billing_cycle, wp.plan_name as wholesale_plan
                 FROM billing_data bd
+                LEFT JOIN wholesale_plans wp ON bd.wholesale_plan_id = wp.id
                 WHERE 1=1
             """
             params = {}
@@ -1995,14 +2132,15 @@ async def get_wholesale_analytics():
                 text(retail_query), conn, params={"cycles": tuple(billing_cycles)}
             )
 
+            # Query the NEW wholesale_billing_summary table directly
             wholesale_query = """
-                SELECT bd.billing_cycle, SUM(wp.fee + (bd.usage_out_of_bundle * wp.out_of_bundle_rate_home)) as total_wholesale_cost
-                FROM billing_data bd
-                JOIN wholesale_plan wp ON bd.wholesale_plan = wp.wholesale_plan_name
-                WHERE bd.billing_cycle IN :cycles
-                GROUP BY bd.billing_cycle
-                ORDER BY billing_cycle DESC
+                SELECT year_month as billing_cycle, SUM(grand_total) as total_wholesale_cost
+                FROM wholesale_billing_summary
+                WHERE year_month IN :cycles
+                GROUP BY year_month
+                ORDER BY year_month DESC
             """
+            
             wholesale_result = pd.read_sql_query(
                 text(wholesale_query), conn, params={"cycles": tuple(billing_cycles)}
             )
@@ -2940,6 +3078,91 @@ async def high_churn_risk_accounts():
             status_code=500, detail=f"Error fetching high churn risk accounts: {str(e)}"
         )
 
+
+# --- Wholesale API Endpoints ---
+
+@app.get("/wholesale/entities")
+async def get_wholesale_entities():
+    """Get all wholesale entities (MNO, MVNA, MVNE)"""
+    try:
+        query = "SELECT * FROM wholesale_entities ORDER BY name;"
+        data = fetch_data(query)
+        return data
+    except Exception as e:
+        logger.error(f"Error in /wholesale/entities: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.get("/wholesale/plans")
+async def get_wholesale_plans(entity_id: Optional[int] = None):
+    """Get wholesale plans, optionally filtered by entity_id"""
+    try:
+        if entity_id:
+            query = "SELECT * FROM wholesale_plans WHERE entity_id = :entity_id ORDER BY id;"
+            params = {"entity_id": entity_id}
+            data = fetch_data(query, params)
+        else:
+            query = "SELECT * FROM wholesale_plans ORDER BY entity_id, id;"
+            data = fetch_data(query)
+        return data
+    except Exception as e:
+        logger.error(f"Error in /wholesale/plans: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.get("/wholesale/billing-summary")
+async def get_wholesale_billing_summary():
+    """Get aggregated wholesale billing summary"""
+    try:
+        # Join with entities for name
+        query = """
+            SELECT s.*, e.name as entity_name
+            FROM wholesale_billing_summary s
+            JOIN wholesale_entities e ON s.entity_id = e.id
+            ORDER BY s.year_month DESC, e.name;
+        """
+        data = fetch_data(query)
+        return data
+    except Exception as e:
+        logger.error(f"Error in /wholesale/billing-summary: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@app.get("/wholesale/billing-records/{cycle_id}")
+async def get_wholesale_billing_records(cycle_id: int):
+    """Get detailed billing records for a specific cycle"""
+    try:
+        query = """
+            SELECT r.*, p.plan_name
+            FROM wholesale_billing_records r
+            JOIN wholesale_plans p ON r.plan_id = p.id
+            WHERE r.billing_cycle_id = :cycle_id
+            ORDER BY r.id;
+        """
+        params = {"cycle_id": cycle_id}
+        data = fetch_data(query, params)
+        return data
+    except Exception as e:
+        logger.error(f"Error in /wholesale/billing-records: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+# --- Analytics API Endpoints ---
+
+@app.get("/analytics/dashboard")
+async def get_dashboard_metrics(billing_cycle: Optional[str] = None):
+    """Get dashboard metrics, optionally filtered by billing cycle"""
+    try:
+        if billing_cycle:
+             query = "SELECT * FROM dashboard_metrics WHERE billing_cycle = :bc"
+             params = {"bc": billing_cycle}
+        else:
+             # Get latest if not specified
+             latest = get_latest_billing_cycle()
+             query = "SELECT * FROM dashboard_metrics WHERE billing_cycle = :bc"
+             params = {"bc": latest}
+        
+        data = fetch_data(query, params)
+        return data[0] if data else {}
+    except Exception as e:
+        logger.error(f"Error in /analytics/dashboard: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
