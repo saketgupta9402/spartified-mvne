@@ -30,7 +30,7 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { CONFIG } from 'src/config-global';
-import { fetchWholesalePlans, createWholesalePlan, fetchSIMMapping, fetchWholesaleAnalytics } from 'src/services/wholesaleService';
+import { fetchWholesalePlans, createWholesalePlan, fetchSIMMapping, fetchWholesaleAnalytics, fetchMVNEEntities, fetchMVNEPlans, fetchMVNEConsumption, fetchMVNEBillingSummary } from 'src/services/wholesaleService';
 import Chart from 'react-apexcharts';
 import type { ApexOptions } from 'apexcharts';
 
@@ -50,6 +50,22 @@ interface SIMMapping {
   total_usage: number;
   billing_cycle: string;
   wholesale_plan: string;
+}
+
+interface MVNEEntity {
+  id: number;
+  name: string;
+  type: string;
+  country: string;
+  currency: string;
+  status: string;
+}
+
+interface MVNEPlan {
+  id: number;
+  plan_name: string;
+  plan_type: string;
+  revenue_share_pct: number;
 }
 
 type Order = 'asc' | 'desc';
@@ -173,6 +189,43 @@ export default function WholesalePage() {
     retail_costs: [],
     wholesale_costs: [],
   });
+
+  const [mvneEntities, setMvneEntities] = useState<MVNEEntity[]>([]);
+  const [totalMvneEntities, setTotalMvneEntities] = useState<number>(0);
+  const [pageMvne, setPageMvne] = useState<number>(0);
+  const [searchMvne, setSearchMvne] = useState<string>('');
+  const [searchFieldMvne, setSearchFieldMvne] = useState<keyof MVNEEntity>('name');
+
+  const [mvnePlans, setMvnePlans] = useState<MVNEPlan[]>([]);
+  const [totalMvnePlans, setTotalMvnePlans] = useState<number>(0);
+
+  useFetchData(
+    fetchMVNEEntities,
+    setMvneEntities,
+    setTotalMvneEntities,
+    pageMvne,
+    rowsPerPage,
+    searchMvne,
+    searchFieldMvne,
+    filterType,
+    'name',
+    sortOrder,
+    'Failed to fetch MVNE entities:'
+  );
+
+  useFetchData(
+    fetchMVNEPlans,
+    setMvnePlans,
+    setTotalMvnePlans,
+    0, // fetch all or first page
+    100,
+    '',
+    'plan_name',
+    'contains',
+    'plan_name',
+    'asc',
+    'Failed to fetch MVNE plans:'
+  );
 
   useFetchData(
     fetchWholesalePlans,
@@ -367,6 +420,7 @@ export default function WholesalePage() {
             <Tab label="Wholesale Plans" sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />
             <Tab label="SIM Mapping" sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />
             <Tab label="Analytics" sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />
+            <Tab label="MVNE & MVNO" sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />
           </Tabs>
 
           {/* Tab 1: Wholesale Plans */}
@@ -698,6 +752,97 @@ export default function WholesalePage() {
                 height={350}
                 width="100%"
               />
+            </Box>
+          )}
+
+          {/* Tab 4: MVNE & MVNO */}
+          {tabValue === 3 && (
+            <Box>
+              <Box sx={{ p: 2, display: 'flex', gap: 2, backgroundColor: '#FFFFFF' }}>
+                <FormControl sx={{ minWidth: 150 }}>
+                  <InputLabel sx={{ color: '#6E6E73' }}>Search Field</InputLabel>
+                  <Select
+                    value={searchFieldMvne}
+                    onChange={(e) => setSearchFieldMvne(e.target.value as keyof MVNEEntity)}
+                    label="Search Field"
+                    sx={{ backgroundColor: '#F5F5F7' }}
+                  >
+                    <MenuItem value="name">Entity Name</MenuItem>
+                    <MenuItem value="type">Type</MenuItem>
+                    <MenuItem value="country">Country</MenuItem>
+                  </Select>
+                </FormControl>
+                <TextField
+                  label={`Search ${searchFieldMvne}`}
+                  variant="outlined"
+                  size="small"
+                  value={searchMvne}
+                  onChange={(e) => setSearchMvne(e.target.value)}
+                  sx={{ width: 250, '& .MuiOutlinedInput-root': { backgroundColor: '#F5F5F7' } }}
+                />
+              </Box>
+              <TableContainer component={Paper} sx={{ maxHeight: 600, overflow: 'auto' }}>
+                <Table stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      <HeaderCell>Entity Name</HeaderCell>
+                      <HeaderCell>Type</HeaderCell>
+                      <HeaderCell>Country</HeaderCell>
+                      <HeaderCell>Currency</HeaderCell>
+                      <HeaderCell>Status</HeaderCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {mvneEntities.length > 0 ? (
+                      mvneEntities.map((entity) => (
+                        <StyledTableRow key={entity.id}>
+                          <StyledTableCell>{entity.name}</StyledTableCell>
+                          <StyledTableCell>{entity.type}</StyledTableCell>
+                          <StyledTableCell>{entity.country}</StyledTableCell>
+                          <StyledTableCell>{entity.currency}</StyledTableCell>
+                          <StyledTableCell>{entity.status}</StyledTableCell>
+                        </StyledTableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center">No data available</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <TablePagination
+                component="div"
+                count={totalMvneEntities}
+                rowsPerPage={rowsPerPage}
+                page={pageMvne}
+                onPageChange={(e, newPage) => setPageMvne(newPage)}
+                rowsPerPageOptions={[]}
+              />
+
+              <Box sx={{ p: 3, mt: 2 }}>
+                <Typography variant="h6" sx={{ mb: 2 }}>Wholesale Partner Plans</Typography>
+                <TableContainer component={Paper}>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <HeaderCell>Plan Name</HeaderCell>
+                        <HeaderCell>Type</HeaderCell>
+                        <HeaderCell>Rev Share (%)</HeaderCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {mvnePlans.map((plan) => (
+                        <StyledTableRow key={plan.id}>
+                          <StyledTableCell>{plan.plan_name}</StyledTableCell>
+                          <StyledTableCell>{plan.plan_type}</StyledTableCell>
+                          <StyledTableCell>{plan.revenue_share_pct}%</StyledTableCell>
+                        </StyledTableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
             </Box>
           )}
         </AppleCard>

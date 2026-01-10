@@ -107,3 +107,57 @@ export const fetchSIMMapping = async ({
     throw error;
   }
 };
+
+// MVNE Service Functions
+export const fetchMVNEEntities = async (params: any): Promise<{ data: any[]; total: number }> => {
+  try {
+    const response = await axios.get(`${config.api_base_url}/mvne/entities`, { params });
+    // If backend doesn't return {data, total}, wrap it
+    if (Array.isArray(response.data)) {
+      return { data: response.data, total: response.data.length };
+    }
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching MVNE entities:', error);
+    throw error;
+  }
+};
+
+export const fetchMVNEPlans = async (params: any): Promise<{ data: any[]; total: number }> => {
+  try {
+    const response = await axios.get(`${config.api_base_url}/mvne/plans`, { params });
+    if (Array.isArray(response.data)) {
+      return { data: response.data, total: response.data.length };
+    }
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching MVNE plans:', error);
+    throw error;
+  }
+};
+
+export const fetchMVNEConsumption = async (params: any): Promise<{ data: any[]; total: number }> => {
+  try {
+    const response = await axios.get(`${config.api_base_url}/mvne/consumption`, { params });
+    if (Array.isArray(response.data)) {
+      return { data: response.data, total: response.data.length };
+    }
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching MVNE consumption:', error);
+    throw error;
+  }
+};
+
+export const fetchMVNEBillingSummary = async (params: any): Promise<{ data: any[]; total: number }> => {
+  try {
+    const response = await axios.get(`${config.api_base_url}/mvne/billing/summary`, { params });
+    if (Array.isArray(response.data)) {
+      return { data: response.data, total: response.data.length };
+    }
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching MVNE billing summary:', error);
+    throw error;
+  }
+};

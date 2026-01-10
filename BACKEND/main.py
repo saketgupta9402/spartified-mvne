@@ -53,6 +53,11 @@ logger.info(
 
 app = FastAPI()
 
+# Import and include MVNE router
+import mvne_router
+app.include_router(mvne_router.router)
+
+
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
@@ -61,27 +66,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_URI = os.getenv("DATABASE_URL")
-if not DB_URI:
-    logger.error("DATABASE_URL not found in environment variables")
-    raise ValueError("DATABASE_URL not set")
-
-print(f"DEBUG: Database URL = {DB_URI}")
-try:
-    engine = create_engine(DB_URI)
-    # Test the connection
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT 1"))
-        print("DEBUG: Database connection successful!")
-except Exception as e:
-    print(f"DATABASE CONNECTION ERROR: {e}")
-    import traceback
-
-    traceback.print_exc()
-    exit(1)
-
-
-engine = create_engine(DB_URI)
+# Import database components
+from database import engine, fetch_data, execute_query, billing_data_cache
 
 # API Keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -274,9 +260,8 @@ def safe_query_execute(query: str, fallback_data: Any = None) -> Dict[str, Any]:
         }
 
 
-# In-memory caches with token savings tracking
+# Caches are now in database.py
 chat_cache: dict[str, tuple[str, int]] = {}  # Query -> (response, tokens_used)
-billing_data_cache: dict[str, list[dict]] = {}  # Query -> fetched data
 
 
 # Pydantic Models
@@ -655,53 +640,7 @@ def get_latest_billing_cycle() -> str:
         return "2025-01"
 
 
-def fetch_data(query: str, params=None) -> list[dict]:
-    cache_key = f"{query}:{str(params)}"
-    if cache_key in billing_data_cache:
-        logger.info(f"Cache hit for billing data query: {cache_key}")
-        return billing_data_cache[cache_key]
-
-    try:
-        logger.info(f"Executing query: {query} with params: {params}")
-        with engine.connect() as conn:
-            result = pd.read_sql_query(text(query), conn, params=params)
-            data = result.to_dict(orient="records")
-            billing_data_cache[cache_key] = data
-            logger.info(f"Fetched and cached data: {data}")
-            print(
-                f"DEBUG: Query result count: {len(data)}, First row: {data[0] if data else 'NO DATA'}"
-            )
-
-            return data if data else []
-    except Exception as e:
-        logger.error(f"Database error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    finally:
-        engine.dispose()
-
-
-def execute_query(query: str, params=None):
-    try:
-        with engine.connect() as conn:
-            query_lower = query.lower().strip()
-            logger.info(f"Executing query: {query}")
-            if query_lower.startswith("select"):
-                result = pd.read_sql_query(text(query), conn, params=params)
-                data = result.to_dict(orient="records")
-                logger.info(f"Query result: {data}")
-                return data if data else []
-            elif query_lower.startswith("update") or query_lower.startswith(
-                "insert into"
-            ):
-                with conn.begin():
-                    result = conn.execute(text(query), params or {})
-                    affected_rows = result.rowcount
-                action = "updated" if query_lower.startswith("update") else "inserted"
-                response_text = f"Success, {action} {affected_rows} row{'s' if affected_rows != 1 else ''}"
-                logger.info(response_text)
-                return response_text
-            else:
-                raise ValueError(f"Unsupported query type: {query[:50]}...")
+# execute_query is now in database.py
     except Exception as e:
         logger.error(f"Error executing query: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
