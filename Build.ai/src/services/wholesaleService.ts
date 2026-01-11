@@ -161,3 +161,43 @@ export const fetchMVNEBillingSummary = async (params: any): Promise<{ data: any[
     throw error;
   }
 };
+
+export const fetchMVNEDashboardData = async (entityId?: number): Promise<any> => {
+  try {
+    const response = await axios.get(`${config.api_base_url}/mvne/analytics/dashboard`, {
+      params: { entity_id: entityId },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching MVNE dashboard data:', error);
+    throw error;
+  }
+};
+
+export const uploadMVNECSV = async (file: File): Promise<any> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const response = await axios.post(`${config.api_base_url}/mvne/upload-csv`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error uploading MVNE CSV:', error);
+    throw error;
+  }
+};
+
+export const uploadMasterCSV = async (file: File): Promise<any> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const response = await axios.post(`${config.api_base_url}/system/upload-master-csv`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error uploading Master CSV:', error);
+    throw error;
+  }
+};

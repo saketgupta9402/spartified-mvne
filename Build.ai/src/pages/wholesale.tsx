@@ -389,7 +389,7 @@ export default function WholesalePage() {
       labels: { style: { colors: '#1D1D1F', fontFamily: '"SF Pro Text", sans-serif' } },
     },
     fill: { opacity: 1, colors: ['#0071E3', '#FF6384'] },
-    tooltip: { y: { formatter: (val) => `$${val.toLocaleString()}` } },
+    tooltip: { y: { formatter: (val: number) => `$${val.toLocaleString()}` } },
   };
 
   const analyticsChartSeries = [

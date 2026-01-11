@@ -53,9 +53,11 @@ logger.info(
 
 app = FastAPI()
 
-# Import and include MVNE router
+# Import and include routers
 import mvne_router
+import system_router
 app.include_router(mvne_router.router)
+app.include_router(system_router.router)
 
 
 # Enable CORS
