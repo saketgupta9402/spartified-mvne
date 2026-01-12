@@ -94,6 +94,11 @@ const apiMappings: { [key: string]: string } = {
   'top 10 sims': `${config.api_base_url}/top10_sims_by_usage`,
   'top 3 accounts by usage': `${config.api_base_url}/top-accounts-usage`,
   'top 3 accounts by bill': `${config.api_base_url}/top-accounts-bill`,
+  'show all wholesale entities': `${config.api_base_url}/mvne/entities`,
+  'show wholesale billing summary': `${config.api_base_url}/mvne/billing/summary`,
+  'monthly consumption by entity': `${config.api_base_url}/mvne/consumption`,
+  'wholesale plans overview': `${config.api_base_url}/mvne/plans`,
+  'mvne analytics dashboard': `${config.api_base_url}/mvne/analytics/dashboard`,
 };
 
 const suggestedQuestions = [
@@ -105,6 +110,11 @@ const suggestedQuestions = [
   'Billing summary',
   'Top 3 accounts by usage',
   'Top 3 accounts by bill',
+  'Show all wholesale entities',
+  'Show wholesale billing summary',
+  'Monthly consumption by entity',
+  'Wholesale plans overview',
+  'MVNE analytics dashboard',
 ];
 
 const loadingMessages = [
