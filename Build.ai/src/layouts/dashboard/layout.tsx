@@ -1,15 +1,21 @@
+import React, { useState } from 'react';
 import type { Theme, SxProps, Breakpoint } from '@mui/material/styles';
+
 import Box from '@mui/material/Box';
-import { _langs } from 'src/_mock'; // Moved up to comply with import/order
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import { Button, Tooltip, IconButton, Menu, MenuItem, Typography } from '@mui/material';
+
+import { _langs } from 'src/_mock';
+
 import { Iconify } from 'src/components/iconify';
-import { Button } from '@mui/material';
-import { Inventory } from '@mui/icons-material';
+
 import { Main } from './main';
 import { LayoutSection } from '../core/layout-section';
 import { HeaderSection } from '../core/header-section';
 import { AccountPopover } from '../components/account-popover';
 import { LanguagePopover } from '../components/language-popover';
 import { NavigationPopover } from '../components/navigation-popover';
+import { useNavigationContext } from '../components/navigation-context';
 
 // ----------------------------------------------------------------------
 
@@ -24,9 +30,24 @@ export type DashboardLayoutProps = {
 export function DashboardLayout({ sx, children, header }: DashboardLayoutProps) {
   const layoutQuery: Breakpoint = 'lg';
 
-  function getButtonStyles(arg0: string): SxProps<Theme> | undefined {
-    throw new Error('Function not implemented.');
-  }
+  const { hiddenTabs, showTab } = useNavigationContext();
+
+  const [anchorElRestore, setAnchorElRestore] = useState<null | HTMLElement>(null);
+
+  const handleOpenRestoreMenu = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorElRestore(event.currentTarget);
+  };
+
+  const handleCloseRestoreMenu = () => {
+    setAnchorElRestore(null);
+  };
+
+  const handleRestoreTab = (title: string) => {
+    showTab(title);
+    if (hiddenTabs.length <= 1) {
+      handleCloseRestoreMenu();
+    }
+  };
 
   return (
     <LayoutSection
@@ -46,64 +67,63 @@ export function DashboardLayout({ sx, children, header }: DashboardLayoutProps) 
           slots={{
             leftArea: (
               <Box gap={2} display="flex" alignItems="center">
-                {/* Logo with increased size and clarity */}
                 <Box
                   component="img"
-                  src="/assets/icons/Logo.svg" // Replace with your logo path
+                  src="/assets/icons/Logo.svg"
                   alt="Global Reach AI Logo"
                   sx={{
                     paddingLeft: 3,
-                    height: 50, // Keeping existing size
+                    height: 50,
                     width: 'auto',
-                    objectFit: 'contain', // Ensures logo scales properly
-                    filter: 'brightness(1.1)', // Slight brightness boost for clarity
+                    objectFit: 'contain',
+                    filter: 'brightness(1.1)',
                   }}
                 />
-                {/* Text "Global Reach AI" styled professionally */}
                 <Box
                   component="span"
                   sx={{
-                    fontSize: '2rem', // Keeping existing font size
-                    fontWeight: 'bold', // Keeping bold
-                    fontFamily: '"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', // Keeping font family
-                    color: '#000000', // Keeping black color
-                    letterSpacing: '0.5px', // Keeping spacing
-                    // textTransform: 'uppercase', // Keeping uppercase
+                    fontSize: '2rem',
+                    fontWeight: 'bold',
+                    fontFamily:
+                      '"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    color: '#000000',
+                    letterSpacing: '0.5px',
                   }}
                 >
                   Insight AI
                 </Box>
-                {/* Text "Powered by" styled professionally */}
-                {/* <Box
-                  component="span"
-                  sx={{
-                    paddingTop: 1,
-                    fontSize: '0.8rem', // Keeping existing font size
-                    fontFamily: '"SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', // Keeping font family
-                    color: '#000000', // Keeping black color
-                    letterSpacing: '0.5px', // Keeping spacing
-                    // textTransform: 'uppercase', // Keeping uppercase
-                  }}
-                >
-                  powered by
-                </Box> */}
-                {/* Additional logo_spartified.png to the right */}
-                {/* <Box
-                  component="img"
-                  src="logo_spartified.png" // Path to the new logo
-                  alt="Spartified Logo"
-                  sx={{
-                    paddingTop: 1,
-                    height: 35, // Matching the size of the first logo
-                    width: 'auto',
-                    objectFit: 'contain', // Ensures logo scales properly
-                    filter: 'brightness(1.1)', // Consistent brightness boost
-                  }}
-                /> */}
               </Box>
             ),
             rightArea: (
               <Box gap={1} display="flex" alignItems="center">
+                {hiddenTabs.length > 0 && (
+                  <>
+                    <Tooltip title="Show Hidden Tabs">
+                      <IconButton onClick={handleOpenRestoreMenu} color="primary">
+                        <VisibilityIcon />
+                      </IconButton>
+                    </Tooltip>
+
+                    <Menu
+                      anchorEl={anchorElRestore}
+                      open={Boolean(anchorElRestore)}
+                      onClose={handleCloseRestoreMenu}
+                      PaperProps={{
+                        sx: { width: 200, maxHeight: 300 },
+                      }}
+                    >
+                      <Typography variant="subtitle2" sx={{ p: 1.5, color: 'text.secondary' }}>
+                        Hidden Tabs
+                      </Typography>
+                      {hiddenTabs.map((title) => (
+                        <MenuItem key={title} onClick={() => handleRestoreTab(title)}>
+                          {title}
+                        </MenuItem>
+                      ))}
+                    </Menu>
+                  </>
+                )}
+
                 <LanguagePopover data={_langs} />
                 <AccountPopover
                   data={[

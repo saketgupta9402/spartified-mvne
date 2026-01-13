@@ -10,6 +10,8 @@ import { ThemeProvider } from 'src/theme/theme-provider';
 
 import { Iconify } from 'src/components/iconify';
 
+import { NavigationProvider } from 'src/layouts/components/navigation-context';
+
 // ----------------------------------------------------------------------
 
 export default function App() {
@@ -37,9 +39,11 @@ export default function App() {
   );
 
   return (
-    <ThemeProvider>
-      <Router />
-      {}
-    </ThemeProvider>
+    <NavigationProvider>
+      <ThemeProvider>
+        <Router />
+        { }
+      </ThemeProvider>
+    </NavigationProvider>
   );
 }
