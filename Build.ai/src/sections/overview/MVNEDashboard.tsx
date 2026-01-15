@@ -120,6 +120,25 @@ export const MVNEDashboard = () => {
         title: { text: 'Total Portins vs MNO last 4 Months', style: { fontSize: '14px', fontWeight: 600 } }
     };
 
+    // Data Consumption Volume Trend
+    const usageTrendOptions: ApexOptions = {
+        chart: { type: 'area', toolbar: { show: false } },
+        xaxis: { categories: data.usageDetail.map((d: any) => d.year_month) },
+        colors: ['#0071E3', '#34C759', '#FF9500'],
+        stroke: { curve: 'smooth', width: 2 },
+        fill: { type: 'gradient', gradient: { opacityFrom: 0.5, opacityTo: 0.1 } },
+        title: { text: 'Monthly Data Consumption Volumes', style: { fontSize: '16px', fontWeight: 600 } },
+        yaxis: [
+            { title: { text: 'Data (GB)' }, labels: { formatter: (val) => `${val.toFixed(1)} GB` } },
+            { opposite: true, title: { text: 'Voice (Min) / SMS (Count)' } }
+        ]
+    };
+
+    const latestUsage = data.usageDetail[data.usageDetail.length - 1] || {};
+    const voiceSeries = data.usageDetail.map((d: any) => d.voice_usage);
+    const smsSeries = data.usageDetail.map((d: any) => d.sms_usage);
+    const dataSeries = data.usageDetail.map((d: any) => d.data_usage);
+
     return (
         <Box sx={{ p: 0, backgroundColor: '#f5f5f5' }}>
             {/* KPI Row */}
@@ -166,13 +185,13 @@ export const MVNEDashboard = () => {
             <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>Service Usage Detail</Typography>
             <Grid container spacing={2} sx={{ mb: 4 }}>
                 <Grid item xs={12} md={4}>
-                    <UsageBox title="VOICE" value="23,119" series={[30, 40, 35, 50, 49, 60, 70]} color="#0071E3" />
+                    <UsageBox title="VOICE" value={latestUsage.voice_usage?.toLocaleString() || '0'} series={voiceSeries} color="#0071E3" />
                 </Grid>
                 <Grid item xs={12} md={4}>
-                    <UsageBox title="SMS" value="20,347" series={[40, 30, 45, 30, 55, 40, 50]} color="#00B4D8" />
+                    <UsageBox title="SMS" value={latestUsage.sms_usage?.toLocaleString() || '0'} series={smsSeries} color="#00B4D8" />
                 </Grid>
                 <Grid item xs={12} md={4}>
-                    <UsageBox title="DATA (GB)" value="1,357" series={[20, 50, 40, 60, 50, 80, 70]} color="#0077B6" />
+                    <UsageBox title="DATA (GB)" value={latestUsage.data_usage?.toLocaleString() || '0'} series={dataSeries} color="#0077B6" />
                 </Grid>
             </Grid>
 
@@ -193,25 +212,90 @@ export const MVNEDashboard = () => {
                 </Grid>
             </Grid>
 
-            {/* Secondary Charts */}
+            {/* Data Usage and Volumes */}
             <Grid container spacing={3} sx={{ mt: 1 }}>
-                <Grid item xs={12} md={6}>
-                    <AppleCard sx={{ p: 2 }}>
+                <Grid item xs={12} md={8}>
+                    <AppleCard sx={{ p: 2, height: 400 }}>
+                        <Chart
+                            options={usageTrendOptions}
+                            series={[
+                                { name: 'Data (GB)', type: 'area', data: dataSeries },
+                                { name: 'Voice (Min)', type: 'line', data: voiceSeries },
+                                { name: 'SMS', type: 'line', data: smsSeries }
+                            ]}
+                            type="area"
+                            height={360}
+                        />
+                    </AppleCard>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <AppleCard sx={{ p: 2, height: 400 }}>
+                        <Chart options={{
+                            chart: { type: 'bar' },
+                            xaxis: { categories: data.dataUsagePerEntity.map((d: any) => d.entity_name) },
+                            plotOptions: { bar: { horizontal: true } },
+                            title: { text: 'Data Usage per Entity (GB)', style: { fontWeight: 600 } },
+                            colors: ['#AF52DE']
+                        }} series={[{ name: 'Data Usage', data: data.dataUsagePerEntity.map((d: any) => d.total_data_usage) }]} type="bar" height={360} />
+                    </AppleCard>
+                </Grid>
+            </Grid>
+
+            {/* Secondary Charts and Top Entities */}
+            <Grid container spacing={3} sx={{ mt: 1 }}>
+                <Grid item xs={12} md={4}>
+                    <AppleCard sx={{ p: 2, height: 400, overflow: 'auto' }}>
+                        <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 700, color: '#1D1D1F' }}>
+                            Top Entities by Data Usage
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {data.dataUsagePerEntity.slice(0, 5).map((entity: any, index: number) => (
+                                <Box key={entity.entity_name} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    <Box sx={{
+                                        width: 24,
+                                        height: 24,
+                                        borderRadius: '50%',
+                                        bgcolor: index === 0 ? '#AF52DE' : '#F5F5F7',
+                                        color: index === 0 ? 'white' : '#86868B',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 700
+                                    }}>
+                                        {index + 1}
+                                    </Box>
+                                    <Box sx={{ flexGrow: 1 }}>
+                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{entity.entity_name}</Typography>
+                                        <Typography variant="caption" sx={{ color: '#86868B' }}>{entity.total_data_usage.toLocaleString()} GB used</Typography>
+                                    </Box>
+                                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#AF52DE' }}>
+                                        {((entity.total_data_usage / data.dataUsagePerEntity.reduce((acc: number, curr: any) => acc + curr.total_data_usage, 0)) * 100).toFixed(1)}%
+                                    </Typography>
+                                </Box>
+                            ))}
+                        </Box>
+                    </AppleCard>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                    <AppleCard sx={{ p: 2, height: 400 }}>
                         <Chart options={{
                             chart: { type: 'bar' },
                             xaxis: { categories: data.entityComparison.map((d: any) => d.entity_name) },
                             plotOptions: { bar: { horizontal: true } },
-                            title: { text: 'Wholesale Entity Comparison', style: { fontWeight: 600 } }
-                        }} series={[{ name: 'Total Cost', data: data.entityComparison.map((d: any) => d.total_cost) }]} type="bar" height={300} />
+                            title: { text: 'Wholesale Entity Cost Comparison', style: { fontWeight: 600 } },
+                            colors: ['#0071E3']
+                        }} series={[{ name: 'Total Cost', data: data.entityComparison.map((d: any) => d.total_cost) }]} type="bar" height={360} />
                     </AppleCard>
                 </Grid>
-                <Grid item xs={12} md={6}>
-                    <AppleCard sx={{ p: 2 }}>
+                <Grid item xs={12} md={4}>
+                    <AppleCard sx={{ p: 2, height: 400 }}>
                         <Chart options={{
                             chart: { type: 'donut' },
                             labels: data.costBreakdown.map((d: any) => d.service_type),
-                            title: { text: 'Cost Breakdown by Service', style: { fontWeight: 600 } }
-                        }} series={data.costBreakdown.map((d: any) => parseFloat(d.total_amount))} type="donut" height={300} />
+                            title: { text: 'Cost Breakdown by Service', style: { fontWeight: 600 } },
+                            colors: ['#0071E3', '#00B4D8', '#0077B6', '#AF52DE', '#FF9500']
+                        }} series={data.costBreakdown.map((d: any) => parseFloat(d.total_amount))} type="donut" height={360} />
                     </AppleCard>
                 </Grid>
             </Grid>

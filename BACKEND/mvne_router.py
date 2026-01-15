@@ -275,7 +275,17 @@ async def get_mvne_dashboard_data(entity_id: Optional[int] = None):
         FROM monthly_consumption
         WHERE 1=1 {entity_filter}
         GROUP BY year_month
-        ORDER BY year_month DESC LIMIT 6
+        ORDER BY year_month ASC LIMIT 12
+    """
+
+    # 8. Data Usage per Entity (Horizontal Bar Chart)
+    data_usage_per_entity_query = """
+        SELECT e.name as entity_name, SUM(c.data_gb_used) as total_data_usage
+        FROM monthly_consumption c
+        JOIN wholesale_entities e ON c.entity_id = e.id
+        WHERE c.year_month = (SELECT MAX(year_month) FROM monthly_consumption)
+        GROUP BY e.name
+        ORDER BY total_data_usage DESC
     """
 
     try:
@@ -298,6 +308,7 @@ async def get_mvne_dashboard_data(entity_id: Optional[int] = None):
             "entityComparison": fetch_data(entity_comparison_query, params) if not entity_id else [],
             "kpis": fetch_data(kpi_query, params)[0] if fetch_data(kpi_query, params) else {},
             "usageDetail": usage_detail,
+            "dataUsagePerEntity": fetch_data(data_usage_per_entity_query, params) if not entity_id else [],
             "porting": porting_mock
         }
     except Exception as e:

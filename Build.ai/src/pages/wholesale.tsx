@@ -27,7 +27,10 @@ import {
   DialogActions,
   Tabs,
   Tab,
+  Menu,
+  IconButton,
 } from '@mui/material';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 import { styled } from '@mui/material/styles';
 import { CONFIG } from 'src/config-global';
 import { fetchWholesalePlans, createWholesalePlan, fetchSIMMapping, fetchWholesaleAnalytics, fetchMVNEEntities, fetchMVNEPlans, fetchMVNEConsumption, fetchMVNEBillingSummary } from 'src/services/wholesaleService';
@@ -198,6 +201,50 @@ export default function WholesalePage() {
 
   const [mvnePlans, setMvnePlans] = useState<MVNEPlan[]>([]);
   const [totalMvnePlans, setTotalMvnePlans] = useState<number>(0);
+
+  // Hide Tab Feature State
+  const [hiddenTabs, setHiddenTabs] = useState<string[]>([]);
+  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; tabLabel: string } | null>(null);
+
+  const handleContextMenu = (event: React.MouseEvent, tabLabel: string) => {
+    event.preventDefault();
+    setContextMenu(
+      contextMenu === null
+        ? {
+          mouseX: event.clientX + 2,
+          mouseY: event.clientY - 6,
+          tabLabel,
+        }
+        : null,
+    );
+  };
+
+  const handleCloseContextMenu = () => {
+    setContextMenu(null);
+  };
+
+  const handleHideTab = () => {
+    if (contextMenu) {
+      const { tabLabel } = contextMenu;
+      setHiddenTabs((prev) => [...prev, tabLabel]);
+
+      const allTabs = ["Wholesale Plans", "SIM Mapping", "Analytics", "MVNE & MVNO"];
+      const visibleTabs = allTabs.filter(t => t !== tabLabel && !hiddenTabs.includes(t));
+
+      if (tabLabel === allTabs[tabValue]) {
+        if (visibleTabs.length > 0) {
+          setTabValue(allTabs.indexOf(visibleTabs[0]));
+        }
+      }
+    }
+    handleCloseContextMenu();
+  };
+
+  const handleShowAllTabs = () => {
+    setHiddenTabs([]);
+  };
+
+  const isTabHidden = (tabLabel: string) => hiddenTabs.includes(tabLabel);
 
   useFetchData(
     fetchMVNEEntities,
@@ -407,21 +454,48 @@ export default function WholesalePage() {
 
       <Box sx={{ width: '100%', height: '100%', padding: 3, boxSizing: 'border-box', backgroundColor: '#F5F5F7' }}>
         <AppleCard sx={{ p: 0, boxShadow: 3 }}>
-          <HeaderBox>
+          <HeaderBox sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h5" sx={{ fontWeight: 600, color: '#F5F5F7' }}>
               Wholesale
             </Typography>
+            {hiddenTabs.length > 0 && (
+              <IconButton
+                onClick={handleShowAllTabs}
+                sx={{
+                  color: '#22c55e', // green color
+                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  },
+                }}
+              >
+                <VisibilityIcon />
+              </IconButton>
+            )}
           </HeaderBox>
           <Tabs
             value={tabValue}
             onChange={handleTabChange}
             sx={{ backgroundColor: '#F5F5F7', borderBottom: '1px solid #E0E0E0' }}
           >
-            <Tab label="Wholesale Plans" sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />
-            <Tab label="SIM Mapping" sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />
-            <Tab label="Analytics" sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />
-            <Tab label="MVNE & MVNO" sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />
+            {!isTabHidden("Wholesale Plans") && <Tab value={0} label="Wholesale Plans" onContextMenu={(e) => handleContextMenu(e, "Wholesale Plans")} sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />}
+            {!isTabHidden("SIM Mapping") && <Tab value={1} label="SIM Mapping" onContextMenu={(e) => handleContextMenu(e, "SIM Mapping")} sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />}
+            {!isTabHidden("Analytics") && <Tab value={2} label="Analytics" onContextMenu={(e) => handleContextMenu(e, "Analytics")} sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />}
+            {!isTabHidden("MVNE & MVNO") && <Tab value={3} label="MVNE & MVNO" onContextMenu={(e) => handleContextMenu(e, "MVNE & MVNO")} sx={{ fontFamily: '"SF Pro Text", sans-serif', color: '#1D1D1F' }} />}
           </Tabs>
+
+          <Menu
+            open={contextMenu !== null}
+            onClose={handleCloseContextMenu}
+            anchorReference="anchorPosition"
+            anchorPosition={
+              contextMenu !== null
+                ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
+                : undefined
+            }
+          >
+            <MenuItem onClick={handleHideTab}>Hide Tab</MenuItem>
+          </Menu>
 
           {/* Tab 1: Wholesale Plans */}
           {tabValue === 0 && (

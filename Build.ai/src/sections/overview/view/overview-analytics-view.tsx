@@ -25,6 +25,10 @@ import { AnalyticsWidgetSummary } from 'src/sections/overview/analytics-widget-s
 import { Box, Dialog, DialogTitle, DialogContent, DialogActions, Button, Divider } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import IconButton from '@mui/material/IconButton';
 import { BusinessOverviewComponent } from '../../../layouts/components/businessOverView';
 import MetricsDashboard from '../../../layouts/components/performanceMetrics';
 import { MVNEDashboard } from '../MVNEDashboard';
@@ -282,6 +286,53 @@ export function OverviewAnalyticsView() {
   const [modalOpen, setModalOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Hide Tab Feature State
+  const [hiddenTabs, setHiddenTabs] = useState<string[]>([]);
+  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; tabLabel: string } | null>(null);
+
+  const handleContextMenu = (event: React.MouseEvent, tabLabel: string) => {
+    event.preventDefault();
+    setContextMenu(
+      contextMenu === null
+        ? {
+          mouseX: event.clientX + 2,
+          mouseY: event.clientY - 6,
+          tabLabel,
+        }
+        : null,
+    );
+  };
+
+  const handleCloseContextMenu = () => {
+    setContextMenu(null);
+  };
+
+  const handleHideTab = () => {
+    if (contextMenu) {
+      const { tabLabel } = contextMenu;
+      setHiddenTabs((prev) => [...prev, tabLabel]);
+
+      // If the hidden tab was the active one, switch to another visible tab
+      if (tabLabel === 'Business Overview' && businessclicked) {
+        if (!hiddenTabs.includes('Performance Metrics')) handlePerformanceClick();
+        else if (!hiddenTabs.includes('MVNE Metrics')) handleMvneClick();
+      } else if (tabLabel === 'Performance Metrics' && performanceClicked) {
+        if (!hiddenTabs.includes('Business Overview')) handleBusinessClick();
+        else if (!hiddenTabs.includes('MVNE Metrics')) handleMvneClick();
+      } else if (tabLabel === 'MVNE Metrics' && mvneMetricsClicked) {
+        if (!hiddenTabs.includes('Business Overview')) handleBusinessClick();
+        else if (!hiddenTabs.includes('Performance Metrics')) handlePerformanceClick();
+      }
+    }
+    handleCloseContextMenu();
+  };
+
+  const handleShowAllTabs = () => {
+    setHiddenTabs([]);
+  };
+
+  const isTabHidden = (tabLabel: string) => hiddenTabs.includes(tabLabel);
+
   const handleUploadFile = async (file: File) => {
     try {
       const response = await uploadMasterCSV(file);
@@ -314,87 +365,127 @@ export function OverviewAnalyticsView() {
           }}
         >
           {/* Business Overview Button */}
-          <Box
-            onClick={handleBusinessClick}
-            sx={{
-              px: 3,
-              py: 1,
-              borderRadius: 1,
-              cursor: 'pointer',
-              backgroundColor: businessclicked ? '#fff' : 'transparent',
-              color: businessclicked ? 'black' : '#64748b',
-              fontWeight: businessclicked ? 'bold' : 500,
-              boxShadow: businessclicked ? 1 : 'none',
-              transition: 'all 0.2s ease-in-out',
-
-            }}
-          >
-            Business Overview
-          </Box>
+          {!isTabHidden('Business Overview') && (
+            <Box
+              onClick={handleBusinessClick}
+              onContextMenu={(e) => handleContextMenu(e, 'Business Overview')}
+              sx={{
+                px: 3,
+                py: 1,
+                borderRadius: 1,
+                cursor: 'pointer',
+                backgroundColor: businessclicked ? '#fff' : 'transparent',
+                color: businessclicked ? 'black' : '#64748b',
+                fontWeight: businessclicked ? 'bold' : 500,
+                boxShadow: businessclicked ? 1 : 'none',
+                transition: 'all 0.2s ease-in-out',
+              }}
+            >
+              Business Overview
+            </Box>
+          )}
 
           {/* Performance Metrics Button */}
-          <Box
-            onClick={handlePerformanceClick}
-            sx={{
-              px: 3,
-              py: 1,
-              borderRadius: 1,
-              cursor: 'pointer',
-              backgroundColor: performanceClicked ? '#fff' : 'transparent',
-              color: performanceClicked ? 'black' : '#64748b',
-              fontWeight: performanceClicked ? 'bold' : 500,
-              boxShadow: performanceClicked ? 1 : 'none',
-              transition: 'all 0.2s ease-in-out',
-
-            }}
-          >
-            Performance Metrics
-          </Box>
+          {!isTabHidden('Performance Metrics') && (
+            <Box
+              onClick={handlePerformanceClick}
+              onContextMenu={(e) => handleContextMenu(e, 'Performance Metrics')}
+              sx={{
+                px: 3,
+                py: 1,
+                borderRadius: 1,
+                cursor: 'pointer',
+                backgroundColor: performanceClicked ? '#fff' : 'transparent',
+                color: performanceClicked ? 'black' : '#64748b',
+                fontWeight: performanceClicked ? 'bold' : 500,
+                boxShadow: performanceClicked ? 1 : 'none',
+                transition: 'all 0.2s ease-in-out',
+              }}
+            >
+              Performance Metrics
+            </Box>
+          )}
 
           {/* MVNE Metrics Button */}
+          {!isTabHidden('MVNE Metrics') && (
+            <Box
+              onClick={handleMvneClick}
+              onContextMenu={(e) => handleContextMenu(e, 'MVNE Metrics')}
+              sx={{
+                px: 3,
+                py: 1,
+                borderRadius: 1,
+                cursor: 'pointer',
+                backgroundColor: mvneMetricsClicked ? '#fff' : 'transparent',
+                color: mvneMetricsClicked ? 'black' : '#64748b',
+                fontWeight: mvneMetricsClicked ? 'bold' : 500,
+                boxShadow: mvneMetricsClicked ? 1 : 'none',
+                transition: 'all 0.2s ease-in-out',
+              }}
+            >
+              MVNE Metrics
+            </Box>
+          )}
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {hiddenTabs.length > 0 && (
+            <IconButton
+              onClick={handleShowAllTabs}
+              sx={{
+                color: '#22c55e', // green colour
+                backgroundColor: '#fff',
+                boxShadow: 1,
+                height: '40px',
+                width: '40px',
+                mt: 1,
+                '&:hover': {
+                  backgroundColor: '#f8f9fa',
+                  boxShadow: 2,
+                },
+              }}
+            >
+              <VisibilityIcon />
+            </IconButton>
+          )}
           <Box
-            onClick={handleMvneClick}
+            onClick={() => setModalOpen(true)}
             sx={{
               px: 3,
               py: 1,
+              mt: 1,
               borderRadius: 1,
               cursor: 'pointer',
-              backgroundColor: mvneMetricsClicked ? '#fff' : 'transparent',
-              color: mvneMetricsClicked ? 'black' : '#64748b',
-              fontWeight: mvneMetricsClicked ? 'bold' : 500,
-              boxShadow: mvneMetricsClicked ? 1 : 'none',
+              backgroundColor: '#fff',
+              color: 'black',
+              fontWeight: 'bold',
+              boxShadow: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '40px', // Optional: fix height to control vertical space
+              '&:hover': {
+                backgroundColor: '#f8f9fa',
+                boxShadow: 2,
+              },
               transition: 'all 0.2s ease-in-out',
             }}
           >
-            MVNE Metrics
+            Upload csv
           </Box>
+        </Box>
 
-        </Box>
-        <Box
-          onClick={() => setModalOpen(true)}
-          sx={{
-            px: 3,
-            py: 1,
-            mt: 1,
-            borderRadius: 1,
-            cursor: 'pointer',
-            backgroundColor: '#fff',
-            color: 'black',
-            fontWeight: 'bold',
-            boxShadow: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '40px', // Optional: fix height to control vertical space
-            '&:hover': {
-              backgroundColor: '#f8f9fa',
-              boxShadow: 2,
-            },
-            transition: 'all 0.2s ease-in-out',
-          }}
+        <Menu
+          open={contextMenu !== null}
+          onClose={handleCloseContextMenu}
+          anchorReference="anchorPosition"
+          anchorPosition={
+            contextMenu !== null
+              ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
+              : undefined
+          }
         >
-          Upload csv
-        </Box>
+          <MenuItem onClick={handleHideTab}>Hide Tab</MenuItem>
+        </Menu>
 
       </Box>
       <Box id='layout' >

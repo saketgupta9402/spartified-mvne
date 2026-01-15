@@ -98,7 +98,6 @@ const apiMappings: { [key: string]: string } = {
   'show wholesale billing summary': `${config.api_base_url}/mvne/billing/summary`,
   'monthly consumption by entity': `${config.api_base_url}/mvne/consumption`,
   'wholesale plans overview': `${config.api_base_url}/mvne/plans`,
-  'mvne analytics dashboard': `${config.api_base_url}/mvne/analytics/dashboard`,
 };
 
 const suggestedQuestions = [
@@ -114,7 +113,6 @@ const suggestedQuestions = [
   'Show wholesale billing summary',
   'Monthly consumption by entity',
   'Wholesale plans overview',
-  'MVNE analytics dashboard',
 ];
 
 const loadingMessages = [
@@ -958,13 +956,6 @@ export function AIChatbot() {
               </Box>
             ))}
             <LoadingComponent isLoading={isLoading} loadingMessages={loadingMessages} />
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
-            {suggestedQuestions.map((question, index) => (
-              <Button key={index} variant="outlined" size="small" onClick={() => handleQuerySubmit(question)}>
-                {question}
-              </Button>
-            ))}
           </Box>
           <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
             <TextField

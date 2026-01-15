@@ -176,10 +176,26 @@ def load_token_cache():
     return {}
 
 
+def get_gemini_embeddings(chunks):
+    """Get embeddings using Google's text-embedding-004 model"""
+    if not gemini_model:
+        raise ValueError("Gemini model not initialized. Please set GOOGLE_GEMINI_API_KEY.")
+    try:
+        # Note: genai.embed_content is the standard way for Gemini embeddings
+        result = genai.embed_content(
+            model="models/text-embedding-004",
+            content=chunks,
+            task_type="retrieval_document"
+        )
+        return result['embedding']
+    except Exception as e:
+        logger.error(f"Error getting Gemini embeddings: {e}")
+        raise
+
 def get_openai_embeddings(chunks):
-    """Get embeddings using OpenAI's text-embedding-3-small model"""
+    """Fallback for OpenAI embeddings if needed, but primarily using Gemini now"""
     if not client:
-        raise ValueError("OpenAI client not initialized. Please set OPENAI_API_KEY environment variable.")
+        return get_gemini_embeddings(chunks)
     try:
         response = client.embeddings.create(
             model="text-embedding-3-small", input=chunks  # 1536 dimensions
@@ -589,44 +605,34 @@ def resolve_time_period(query: str, current_date: datetime.datetime) -> str:
 
 @lru_cache(maxsize=100)
 def classify_query_intent_cached(query: str) -> str:
-    """Cached version of intent classification with token tracking."""
-    if not client:
-        logger.warning("OpenAI client not available, defaulting to 'data' intent")
+    """Cached version of intent classification using Gemini."""
+    if not gemini_model:
+        logger.warning("Gemini model not available, defaulting to 'data' intent")
         return "data"
+    
     prompt = dedent(
         f"""
     Determine the intent of the user's query:
-    - **data**: Simple data retrieval (e.g., "show me top 5 accounts", "total bill").
+    - **data**: Simple data retrieval (e.g., "show me top 5 accounts", "total bill", "mvne details").
     - **modification**: Data changes (e.g., "update rate plan").
-    - **analysis**: Complex analysis or prediction (e.g., "predict next month bill").
+    - **analysis**: Complex analysis, prediction, or multi-step reasoning (e.g., "predict next month bill", "analyze usage trends").
 
     Query: "{query}"
     Return the intent as a single word: data, modification, or analysis
     """
     )
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=10,
-        )
-        intent = response.choices[0].message.content.strip().lower()
-        logger.info(f"Classified intent for query '{query}': {intent}")
+        response = gemini_model.generate_content(prompt)
+        intent = response.text.strip().lower()
+        logger.info(f"Classified intent for query '{query}' via Gemini: {intent}")
 
-        tokens_used = response.usage.prompt_tokens + response.usage.completion_tokens
-        update_token_usage(OPENAI_API_KEY, "openai", tokens_used)
-        lifetime = get_lifetime_totals(OPENAI_API_KEY)
-        daily = token_usage_cache.get(
-            datetime.datetime.now().strftime("%Y-%m-%d"), {}
-        ).get(OPENAI_API_KEY, {"openai": 0})["openai"]
-        logger.info(
-            f"OpenAI tokens used for query '{query}': {tokens_used}, Lifetime OpenAI for key {OPENAI_API_KEY[:8]}...: {lifetime['openai']}, Daily OpenAI: {daily}"
-        )
+        # Update token usage for Gemini
+        tokens_used = response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else 0
+        update_token_usage(GEMINI_API_KEY or "GEMINI_KEY", "gemini", tokens_used)
 
         return intent if intent in ["data", "modification", "analysis"] else "data"
     except Exception as e:
-        logger.error(f"Error classifying query intent: {e}")
+        logger.error(f"Error classifying query intent with Gemini: {e}")
         return "data"
 
 
@@ -675,6 +681,14 @@ def generate_sql_query(
         "rate_plan",
         "dashboard_metrics",
         "performance_analytics",
+        "wholesale_entities",
+        "wholesale_plans",
+        "service_rates",
+        "plan_allowances",
+        "monthly_consumption",
+        "wholesale_billing_cycles",
+        "wholesale_billing_records",
+        "wholesale_billing_summary",
     ]
     tables_str = ", ".join(allowed_tables)
     history_str = (
@@ -697,7 +711,7 @@ def generate_sql_query(
 
     **Database Schema:**
     - `cdr_data(sim_id, data_usage, network, timestamp, country)`
-    - `billing_data(sim_id, account_name, rate_plan, total_usage, total_bill, billing_cycle, usage_from_plan, bundle_allowance, bundle_fee, usage_out_of_bundle, charges_out_of_bundle, wholesale_plan)`
+    - `billing_data(sim_id, account_name, rate_plan, total_usage, total_bill, billing_cycle, usage_from_plan, bundle_allowance, bundle_fee, usage_out_of_bundle, charges_out_of_bundle, wholesale_plan_id)`
     - `account_info(account_name, sim_id, rate_plan, billing_cycle)`
     - `rate_plan(rate_plan, bundle_allowance, bundle_fee, home_rate, row_rate)`
     - `dashboard_metrics(billing_cycle, metric_date, total_revenue, gross_profit, net_profit, total_opex, total_cogs, active_accounts, active_sims, new_accounts, lost_accounts, total_usage_gb, avg_cogs_per_account, avg_opex_per_account, accounts_receivable)`
@@ -718,10 +732,17 @@ def generate_sql_query(
     - For performance_analytics queries, filter by both `billing_cycle` and `account_name` when needed.
     - `account_segment` values are: 'Enterprise', 'Mid-Market', 'SMB', 'Startup'.
     - `discount_sensitivity` values are: 'High', 'Medium', 'Low'.
-    - History: {history_str}
-    - Request: "{user_message}"
-    - Output: Only the SQL query, no explanations or extra text.
-    - Avoid joins unless specifically required.
+    
+    **MVNE/Wholesale Rules:**
+    - Always JOIN with `wholesale_entities` (as `e`) and include `e.name` as "Entity Name" when querying `monthly_consumption`, `wholesale_billing_records`, or `wholesale_billing_summary`.
+    - Join `monthly_consumption.entity_id = wholesale_entities.id`.
+    - Join `wholesale_billing_summary.entity_id = wholesale_entities.id`.
+    - Join `wholesale_billing_records.entity_id = wholesale_entities.id`.
+
+    History: {history_str}
+    Request: "{user_message}"
+    Output: Only the SQL query, no explanations or extra text.
+    - Avoid joins unless specifically required OR if it's an MVNE table that needs the entity name.
     - Use simple SQL. Avoid `WITH` clauses (CTEs) and window functions like `RANK()` unless necessary.
     - Prefer subqueries if you need to filter top results.
     - Use valid column names only.
@@ -776,12 +797,13 @@ def generate_analysis(query: str, data: list, history: list[Message]) -> str:
     if cache_key in chat_cache:
         cached_response, cached_tokens = chat_cache[cache_key]
         logger.info(
-            f"Cache hit for analysis: '{query}', Key: {cache_key[:16]}..., Tokens saved (OpenAI): {cached_tokens}"
+            f"Cache hit for analysis: '{query}', Key: {cache_key[:16]}..., Tokens saved (Gemini): {cached_tokens}"
         )
         return cached_response
 
     if not data:
-        return "No historical data available to predict next quarter's bill."
+        return "No historical data available for analysis."
+        
     data_str = "\n".join([", ".join([f"{k}: {v}" for k, v in d.items()]) for d in data])
     history_str = (
         "\n".join([f"{msg.role}: {msg.content[:100]}" for msg in history[-5:]])
@@ -794,38 +816,31 @@ def generate_analysis(query: str, data: list, history: list[Message]) -> str:
     Data (historical billing/usage): {data_str}
     History: {history_str}
     Provide a detailed analysis or prediction in a maximum of 200 words using $ for currency.
-    Base your prediction on historical trends (e.g., average bill, usage patterns, rate_plan details) from the provided data, assuming the next period starts from the current month.
-    Include factors like usage trends, rate_plan costs (bundle fee, out-of-bundle rates), and historical context.
-    If insufficient data, explain why and suggest what additional data would improve the prediction.
-    Format the response with clear paragraphs separated by newlines (\n) and use markdown for emphasis:
-    - **First paragraph**: Introduce the query and summarize the available data (bold the "First paragraph" label).
-    - **Second paragraph**: Analyze trends and make the prediction with reasoning (bold the "Second paragraph" label and key figures like totals).
-    - **Third paragraph**: Discuss limitations or additional considerations (bold the "Third paragraph" label).
-    Ensure the response is concise, readable, and completes the summary within 200 words, avoiding cutoff mid-sentence.
+    Base your prediction on historical trends from the provided data.
+    Format the response with clear paragraphs and markdown for emphasis.
+    - **First paragraph**: Introduce the query and summarize data.
+    - **Second paragraph**: Analyze trends and make the prediction.
+    - **Third paragraph**: Discuss limitations.
     """
     )
-    if not client:
-        raise HTTPException(
-            status_code=500, 
-            detail="OpenAI client not initialized. Please set OPENAI_API_KEY environment variable."
-        )
+    
+    if not gemini_model:
+        return "Gemini analysis is currently unavailable."
+        
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            max_tokens=300,
-        )
-        analysis = response.choices[0].message.content.strip()
-
-        tokens_used = response.usage.prompt_tokens + response.usage.completion_tokens
-        update_token_usage(OPENAI_API_KEY, "openai", tokens_used)
-        lifetime = get_lifetime_totals(OPENAI_API_KEY)
+        response = gemini_model.generate_content(prompt)
+        analysis = response.text.strip()
+        
+        # Update token usage for Gemini
+        tokens_used = response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else len(prompt) // 4
+        update_token_usage(GEMINI_API_KEY or "GEMINI_KEY", "gemini", tokens_used)
+        
+        lifetime = get_lifetime_totals(GEMINI_API_KEY)
         daily = token_usage_cache.get(
             datetime.datetime.now().strftime("%Y-%m-%d"), {}
-        ).get(OPENAI_API_KEY, {"openai": 0})["openai"]
+        ).get(GEMINI_API_KEY, {"gemini": 0})["gemini"]
         logger.info(
-            f"OpenAI tokens used for query '{query}': {tokens_used}, Lifetime OpenAI for key {OPENAI_API_KEY[:8]}...: {lifetime['openai']}, Daily OpenAI: {daily}"
+            f"Gemini tokens used for query '{query}': {tokens_used}, Lifetime Gemini for key {GEMINI_API_KEY[:8]}...: {lifetime['gemini']}, Daily Gemini: {daily}"
         )
 
         chat_cache[cache_key] = (analysis, tokens_used)
