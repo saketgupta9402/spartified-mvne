@@ -3280,6 +3280,91 @@ async def get_wholesale_billing_records(cycle_id: int):
         logger.error(f"Error in /wholesale/billing-records: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+
+
+#NEWLY ADDED JAN 16
+# --- MVNE API Endpoints (Matching React Config) ---
+
+
+@app.get("/mvne/entities")
+async def get_mvne_entities():
+    """Get all wholesale entities (MNO, MVNA, MVNE) - Aliased from /wholesale/entities"""
+    try:
+        # Reuse existing wholesale logic
+        query = "SELECT * FROM wholesale_entities ORDER BY name;"
+        data = fetch_data(query)
+        return data
+    except Exception as e:
+        logger.error(f"Error in /mvne/entities: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@app.get("/mvne/billing/summary")
+async def get_mvne_billing_summary():
+    """Get aggregated wholesale billing summary - Aliased from /wholesale/billing-summary"""
+    try:
+        # Reuse existing wholesale logic
+        query = """
+            SELECT s.*, e.name as entity_name
+            FROM wholesale_billing_summary s
+            JOIN wholesale_entities e ON s.entity_id = e.id
+            ORDER BY s.year_month DESC, e.name;
+        """
+        data = fetch_data(query)
+        return data
+    except Exception as e:
+        logger.error(f"Error in /mvne/billing/summary: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@app.get("/mvne/consumption")
+async def get_mvne_consumption(entity_id: Optional[int] = None):
+    """Get monthly consumption by entity (optionally filtered by entity_id)"""
+    try:
+        if entity_id:
+            query = """
+                SELECT mc.*, we.name as entity_name, wp.plan_name
+                FROM monthly_consumption mc
+                JOIN wholesale_entities we ON mc.entity_id = we.id
+                JOIN wholesale_plans wp ON mc.plan_id = wp.id
+                WHERE mc.entity_id = :entity_id
+                ORDER BY mc.year_month DESC;
+            """
+            params = {"entity_id": entity_id}
+        else:
+            query = """
+                SELECT mc.*, we.name as entity_name, wp.plan_name
+                FROM monthly_consumption mc
+                JOIN wholesale_entities we ON mc.entity_id = we.id
+                JOIN wholesale_plans wp ON mc.plan_id = wp.id
+                ORDER BY mc.year_month DESC;
+            """
+            params = {}
+        
+        data = fetch_data(query, params)
+        return data
+    except Exception as e:
+        logger.error(f"Error in /mvne/consumption: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@app.get("/mvne/plans")
+async def get_mvne_plans(entity_id: Optional[int] = None):
+    """Get wholesale plans, optionally filtered by entity_id - Aliased from /wholesale/plans"""
+    try:
+        # Reuse existing wholesale logic
+        if entity_id:
+            query = "SELECT * FROM wholesale_plans WHERE entity_id = :entity_id ORDER BY id;"
+            params = {"entity_id": entity_id}
+            data = fetch_data(query, params)
+        else:
+            query = "SELECT * FROM wholesale_plans ORDER BY entity_id, id;"
+            data = fetch_data(query)
+        return data
+    except Exception as e:
+        logger.error(f"Error in /mvne/plans: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 # --- Analytics API Endpoints ---
 
 @app.get("/analytics/dashboard")

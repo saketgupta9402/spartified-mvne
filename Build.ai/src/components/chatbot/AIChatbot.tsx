@@ -100,6 +100,12 @@ const apiMappings: { [key: string]: string } = {
   'wholesale plans overview': `${config.api_base_url}/mvne/plans`,
 };
 
+// New: Synonym map for flexible matching (e.g., MVNO/MVNE as "entities")
+const synonymMap: { [key: string]: string[] } = {
+  'entities': ['entity', 'mvno', 'mvne', 'wholesale partner', 'partners', 'wholesale entities'],
+  // Add more groups if needed, e.g., 'billing summary': ['bill summary', 'invoices']
+};
+
 const suggestedQuestions = [
   'Top 10 sims by bill',
   'Top rate plan by usage',
