@@ -30,6 +30,7 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import IconButton from '@mui/material/IconButton';
 import { BusinessOverviewComponent } from '../../../layouts/components/businessOverView';
+import { useNavigationContext } from '../../../layouts/components/navigation-context';
 import MetricsDashboard from '../../../layouts/components/performanceMetrics';
 import { MVNEDashboard } from '../MVNEDashboard';
 
@@ -287,7 +288,7 @@ export function OverviewAnalyticsView() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Hide Tab Feature State
-  const [hiddenTabs, setHiddenTabs] = useState<string[]>([]);
+  const { hiddenTabs, hideTab, resetTabs } = useNavigationContext();
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; tabLabel: string } | null>(null);
 
   const handleContextMenu = (event: React.MouseEvent, tabLabel: string) => {
@@ -310,7 +311,7 @@ export function OverviewAnalyticsView() {
   const handleHideTab = () => {
     if (contextMenu) {
       const { tabLabel } = contextMenu;
-      setHiddenTabs((prev) => [...prev, tabLabel]);
+      hideTab(tabLabel);
 
       // If the hidden tab was the active one, switch to another visible tab
       if (tabLabel === 'Business Overview' && businessclicked) {
@@ -328,7 +329,7 @@ export function OverviewAnalyticsView() {
   };
 
   const handleShowAllTabs = () => {
-    setHiddenTabs([]);
+    resetTabs();
   };
 
   const isTabHidden = (tabLabel: string) => hiddenTabs.includes(tabLabel);

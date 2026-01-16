@@ -32,6 +32,7 @@ import {
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import { styled } from '@mui/material/styles';
+import { useNavigationContext } from 'src/layouts/components/navigation-context';
 import { CONFIG } from 'src/config-global';
 import { fetchWholesalePlans, createWholesalePlan, fetchSIMMapping, fetchWholesaleAnalytics, fetchMVNEEntities, fetchMVNEPlans, fetchMVNEConsumption, fetchMVNEBillingSummary } from 'src/services/wholesaleService';
 import Chart from 'react-apexcharts';
@@ -203,7 +204,7 @@ export default function WholesalePage() {
   const [totalMvnePlans, setTotalMvnePlans] = useState<number>(0);
 
   // Hide Tab Feature State
-  const [hiddenTabs, setHiddenTabs] = useState<string[]>([]);
+  const { hiddenTabs, hideTab, resetTabs } = useNavigationContext();
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number; tabLabel: string } | null>(null);
 
   const handleContextMenu = (event: React.MouseEvent, tabLabel: string) => {
@@ -226,7 +227,7 @@ export default function WholesalePage() {
   const handleHideTab = () => {
     if (contextMenu) {
       const { tabLabel } = contextMenu;
-      setHiddenTabs((prev) => [...prev, tabLabel]);
+      hideTab(tabLabel);
 
       const allTabs = ["Wholesale Plans", "SIM Mapping", "Analytics", "MVNE & MVNO"];
       const visibleTabs = allTabs.filter(t => t !== tabLabel && !hiddenTabs.includes(t));
@@ -241,7 +242,7 @@ export default function WholesalePage() {
   };
 
   const handleShowAllTabs = () => {
-    setHiddenTabs([]);
+    resetTabs();
   };
 
   const isTabHidden = (tabLabel: string) => hiddenTabs.includes(tabLabel);
