@@ -639,277 +639,399 @@ def get_latest_billing_cycle() -> str:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
-def generate_sql_query(
-    user_message: str, history: list[Message], operation: str
-) -> str:
-    # Compute 'last month' based on current date (2026-01-15)
-    current_date = datetime.datetime(2026, 1, 15)
-    last_month = (current_date - relativedelta(months=1)).strftime('%Y-%m')  # '2025-12'
+# def generate_sql_query(user_message: str, history: list[Message], operation: str) -> str:
+#     # Compute 'last month' based on current date (2026-01-15)
+#     current_date = datetime.datetime(2026, 1, 15)
+#     last_month = (current_date - relativedelta(months=1)).strftime('%Y-%m')  # '2025-12'
 
-    history_str = "\n".join([f"{msg.role}: {msg.content}" for msg in history[-5:]]) if history else "No history."
+#     history_str = "\n".join([f"{msg.role}: {msg.content}" for msg in history[-5:]]) if history else "No history."
 
-    # Full schema string (extract from ai_module.py; ensure it's complete in your code)
-    schema = """
-    wholesale_entities (id, name, type, country, currency, status, created_at)
-    wholesale_plans (id, entity_id, plan_name, plan_type, start_date, end_date, revenue_share_pct, created_at)
-    service_rates (id, plan_id, service_type, rate_per_unit, unit, overage_rate)
-    plan_allowances (id, plan_id, service_type, allowance_amount, allowance_unit, period)
-    monthly_consumption (id, entity_id, plan_id, year_month, voice_minutes_used, sms_count, data_gb_used, created_at)
-    wholesale_billing_cycles (id, entity_id, cycle_start_date, cycle_end_date, billing_period, status, total_amount, created_at)
-    wholesale_billing_records (id, entity_id, plan_id, billing_cycle_id, year_month, service_type, allowance_amount, usage_amount, billable_amount, rate_applied, line_item_amount, created_at)
-    wholesale_billing_summary (id, entity_id, year_month, total_base_cost, total_overage_cost, grand_total, invoice_status, generated_at)
-    rate_plan (rate_plan, bundle_allowance, bundle_fee, home_rate, row_rate, created_at)
-    cdr_data (id, sim_id, data_usage, network, timestamp, country, created_at)
-    billing_data (id, sim_id, account_name, rate_plan, total_usage, usage_from_plan, bundle_allowance, bundle_fee, usage_out_of_bundle, charges_out_of_bundle, total_bill, billing_cycle, wholesale_plan_id, created_at)
-    account_info (id, account_name, sim_id, rate_plan, billing_cycle, created_at)
-    dashboard_metrics (id, billing_cycle, metric_date, total_revenue, gross_profit, net_profit, total_opex, total_cogs, active_accounts, active_sims, new_accounts, lost_accounts, total_usage_gb, avg_cogs_per_account, avg_opex_per_account, accounts_receivable, created_at)
-    performance_analytics (id, billing_cycle, metric_date, account_name, account_segment, payment_performance_score, churn_risk_score, dispute_resolution_days, avg_revenue_per_sim, total_revenue, profitability_score, credit_utilization_percent, discount_usage_percent, avg_discount_rate, discount_sensitivity, optimal_discount_rate, q3_forecast, q4_forecast, yoy_growth_forecast, forecast_confidence_level, total_sims, total_usage_mb)
-    """
+#     # Full schema string (extract from ai_module.py; ensure it's complete in your code)
+#     schema = """
+#     wholesale_entities (id, name, type, country, currency, status, created_at)
+#     wholesale_plans (id, entity_id, plan_name, plan_type, start_date, end_date, revenue_share_pct, created_at)
+#     service_rates (id, plan_id, service_type, rate_per_unit, unit, overage_rate)
+#     plan_allowances (id, plan_id, service_type, allowance_amount, allowance_unit, period)
+#     monthly_consumption (id, entity_id, plan_id, year_month, voice_minutes_used, sms_count, data_gb_used, created_at)
+#     wholesale_billing_cycles (id, entity_id, cycle_start_date, cycle_end_date, billing_period, status, total_amount, created_at)
+#     wholesale_billing_records (id, entity_id, plan_id, billing_cycle_id, year_month, service_type, allowance_amount, usage_amount, billable_amount, rate_applied, line_item_amount, created_at)
+#     wholesale_billing_summary (id, entity_id, year_month, total_base_cost, total_overage_cost, grand_total, invoice_status, generated_at)
+#     rate_plan (rate_plan, bundle_allowance, bundle_fee, home_rate, row_rate, created_at)
+#     cdr_data (id, sim_id, data_usage, network, timestamp, country, created_at)
+#     billing_data (id, sim_id, account_name, rate_plan, total_usage, usage_from_plan, bundle_allowance, bundle_fee, usage_out_of_bundle, charges_out_of_bundle, total_bill, billing_cycle, wholesale_plan_id, created_at)
+#     account_info (id, account_name, sim_id, rate_plan, billing_cycle, created_at)
+#     dashboard_metrics (id, billing_cycle, metric_date, total_revenue, gross_profit, net_profit, total_opex, total_cogs, active_accounts, active_sims, new_accounts, lost_accounts, total_usage_gb, avg_cogs_per_account, avg_opex_per_account, accounts_receivable, created_at)
+#     performance_analytics (id, billing_cycle, metric_date, account_name, account_segment, payment_performance_score, churn_risk_score, dispute_resolution_days, avg_revenue_per_sim, total_revenue, profitability_score, credit_utilization_percent, discount_usage_percent, avg_discount_rate, discount_sensitivity, optimal_discount_rate, q3_forecast, q4_forecast, yoy_growth_forecast, forecast_confidence_level, total_sims, total_usage_mb)
+#     """
 
-    prompt = dedent(f"""
-    You are an expert PostgreSQL SQL generator. Generate ONLY a single valid SQL query to answer the user's question. Do not include explanations, markdown, or multiple queries.
+#     prompt = dedent(f"""
+#     You are an expert PostgreSQL SQL generator. Generate ONLY a single valid SQL query to answer the user's question. Do not include explanations, markdown, or multiple queries.
 
-    Database schema:
-    {schema}
+#     Database schema:
+#     {schema}
 
-    Key rules:
-    - Current date is 2026-01-15. Use this for time filters.
-    - For 'last month': Filter year_month = '{last_month}' (e.g., '2025-12').
-    - For entity names (e.g., 'Gamma Telecom'): JOIN monthly_consumption mc ON wholesale_entities e.id = mc.entity_id and filter WHERE e.name ILIKE '%gamma telecom%'.
-    - Aggregate totals: Use SUM(voice_minutes_used), SUM(sms_count), SUM(data_gb_used) and GROUP BY e.name.
-    - Limit results: Use LIMIT 10 if no specific limit mentioned.
-    - Return only relevant data; avoid SELECT *.
-    - Use ILIKE for case-insensitive string matches.
+#     Key rules:
+#     - Current date is 2026-01-15. Use this for time filters.
+#     - For 'last month': Filter year_month = '{last_month}' (e.g., '2025-12').
+#     - For entity names (e.g., 'Gamma Telecom'): JOIN monthly_consumption mc ON wholesale_entities e.id = mc.entity_id and filter WHERE e.name ILIKE '%gamma telecom%'.
+#     - Aggregate totals: Use SUM(voice_minutes_used), SUM(sms_count), SUM(data_gb_used) and GROUP BY e.name.
+#     - Limit results: Use LIMIT 10 if no specific limit mentioned.
+#     - Return only relevant data; avoid SELECT *.
+#     - Use ILIKE for case-insensitive string matches.
 
-    Examples:
-    - User: "How much data, voice, and SMS did Gamma Telecom consume last month?"
-      SQL: SELECT e.name, SUM(mc.data_gb_used) AS total_data_gb, SUM(mc.voice_minutes_used) AS total_voice_minutes, SUM(mc.sms_count) AS total_sms FROM monthly_consumption mc JOIN wholesale_entities e ON mc.entity_id = e.id WHERE e.name ILIKE '%Gamma Telecom%' AND mc.year_month = '{last_month}' GROUP BY e.name;
-    - User: "Top 3 MVNOs by billing total"
-      SQL: SELECT e.name, SUM(s.grand_total) AS total FROM wholesale_billing_summary s JOIN wholesale_entities e ON s.entity_id = e.id WHERE e.type ILIKE '%MVNO%' GROUP BY e.name ORDER BY total DESC LIMIT 3;
+#     Examples:
+#     - User: "How much data, voice, and SMS did Gamma Telecom consume last month?"
+#       SQL: SELECT e.name, SUM(mc.data_gb_used) AS total_data_gb, SUM(mc.voice_minutes_used) AS total_voice_minutes, SUM(mc.sms_count) AS total_sms FROM monthly_consumption mc JOIN wholesale_entities e ON mc.entity_id = e.id WHERE e.name ILIKE '%Gamma Telecom%' AND mc.year_month = '{last_month}' GROUP BY e.name;
+#     - User: "Top 3 MVNOs by billing total"
+#       SQL: SELECT e.name, SUM(s.grand_total) AS total FROM wholesale_billing_summary s JOIN wholesale_entities e ON s.entity_id = e.id WHERE e.type ILIKE '%MVNO%' GROUP BY e.name ORDER BY total DESC LIMIT 3;
 
-    History: {history_str}
+#     History: {history_str}
 
-    User question: {user_message}
-    """)
-    # prompt = dedent(
-    #     f"""
-    # Generate a valid PostgreSQL SQL query for the {operation} operation. The user may ask follow-up or context-aware questions.
+#     User question: {user_message}
+#     """)
+#     # prompt = dedent(
+#     #     f"""
+#     # Generate a valid PostgreSQL SQL query for the {operation} operation. The user may ask follow-up or context-aware questions.
 
-    # You must:
-    # - Use the history below to understand what the user is referring to.
-    # - If the user's request is vague (e.g. "those sims" or "the ones under BMW"), resolve meaning based on history.
-    # - Only use the schema provided below.
-    # - Avoid assuming non-existent columns or structures.
-    # - Output only the SQL query.
+#     # You must:
+#     # - Use the history below to understand what the user is referring to.
+#     # - If the user's request is vague (e.g. "those sims" or "the ones under BMW"), resolve meaning based on history.
+#     # - Only use the schema provided below.
+#     # - Avoid assuming non-existent columns or structures.
+#     # - Output only the SQL query.
     
-    # Only use tables: {tables_str}.
+#     # Only use tables: {tables_str}.
 
-    # **Database Schema:**
-    # - `cdr_data(sim_id, data_usage, network, timestamp, country)`
-    # - `billing_data(sim_id, account_name, rate_plan, total_usage, total_bill, billing_cycle, usage_from_plan, bundle_allowance, bundle_fee, usage_out_of_bundle, charges_out_of_bundle, wholesale_plan_id)`
-    # - `account_info(account_name, sim_id, rate_plan, billing_cycle)`
-    # - `rate_plan(rate_plan, bundle_allowance, bundle_fee, home_rate, row_rate)`
-    # - `dashboard_metrics(billing_cycle, metric_date, total_revenue, gross_profit, net_profit, total_opex, total_cogs, active_accounts, active_sims, new_accounts, lost_accounts, total_usage_gb, avg_cogs_per_account, avg_opex_per_account, accounts_receivable)`
-    # - `performance_analytics(billing_cycle, metric_date, account_name, account_segment, payment_performance_score, churn_risk_score, dispute_resolution_days, avg_revenue_per_sim, total_revenue, profitability_score, credit_utilization_percent, discount_usage_percent, avg_discount_rate, discount_sensitivity, optimal_discount_rate, q3_forecast, q4_forecast, yoy_growth_forecast, forecast_confidence_level, total_sims, total_usage_mb)`
-    # - `wholesale_entities(id, name, type, country, currency, status)`
-    # - `wholesale_plans(id, entity_id, plan_name, plan_type, start_date, end_date, revenue_share_pct)`
-    # - `service_rates(id, plan_id, service_type, rate_per_unit, unit, overage_rate)`
-    # - `plan_allowances(id, plan_id, service_type, allowance_amount, allowance_unit, period)`
-    # - `monthly_consumption(id, entity_id, plan_id, year_month, voice_minutes_used, sms_count, data_gb_used)`
-    # - `wholesale_billing_cycles(id, entity_id, cycle_start_date, cycle_end_date, billing_period, status, total_amount)`
-    # - `wholesale_billing_records(id, entity_id, plan_id, billing_cycle_id, year_month, service_type, allowance_amount, usage_amount, billable_amount, rate_applied, line_item_amount)`
-    # - `wholesale_billing_summary(id, entity_id, year_month, total_base_cost, total_overage_cost, grand_total, invoice_status)`
+#     # **Database Schema:**
+#     # - `cdr_data(sim_id, data_usage, network, timestamp, country)`
+#     # - `billing_data(sim_id, account_name, rate_plan, total_usage, total_bill, billing_cycle, usage_from_plan, bundle_allowance, bundle_fee, usage_out_of_bundle, charges_out_of_bundle, wholesale_plan_id)`
+#     # - `account_info(account_name, sim_id, rate_plan, billing_cycle)`
+#     # - `rate_plan(rate_plan, bundle_allowance, bundle_fee, home_rate, row_rate)`
+#     # - `dashboard_metrics(billing_cycle, metric_date, total_revenue, gross_profit, net_profit, total_opex, total_cogs, active_accounts, active_sims, new_accounts, lost_accounts, total_usage_gb, avg_cogs_per_account, avg_opex_per_account, accounts_receivable)`
+#     # - `performance_analytics(billing_cycle, metric_date, account_name, account_segment, payment_performance_score, churn_risk_score, dispute_resolution_days, avg_revenue_per_sim, total_revenue, profitability_score, credit_utilization_percent, discount_usage_percent, avg_discount_rate, discount_sensitivity, optimal_discount_rate, q3_forecast, q4_forecast, yoy_growth_forecast, forecast_confidence_level, total_sims, total_usage_mb)`
+#     # - `wholesale_entities(id, name, type, country, currency, status)`
+#     # - `wholesale_plans(id, entity_id, plan_name, plan_type, start_date, end_date, revenue_share_pct)`
+#     # - `service_rates(id, plan_id, service_type, rate_per_unit, unit, overage_rate)`
+#     # - `plan_allowances(id, plan_id, service_type, allowance_amount, allowance_unit, period)`
+#     # - `monthly_consumption(id, entity_id, plan_id, year_month, voice_minutes_used, sms_count, data_gb_used)`
+#     # - `wholesale_billing_cycles(id, entity_id, cycle_start_date, cycle_end_date, billing_period, status, total_amount)`
+#     # - `wholesale_billing_records(id, entity_id, plan_id, billing_cycle_id, year_month, service_type, allowance_amount, usage_amount, billable_amount, rate_applied, line_item_amount)`
+#     # - `wholesale_billing_summary(id, entity_id, year_month, total_base_cost, total_overage_cost, grand_total, invoice_status)`
 
-    # **Rules:**
-    # - `billing_cycle` and `year_month` are `character varying` columns in 'YYYY-MM' format (e.g., '2025-01'). Compare them directly without TO_CHAR.
-    # - For CDR queries, use `timestamp` with `DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')` for last month.
-    # - For dashboard_metrics queries, use `metric_date` for date filtering.
-    # - For performance_analytics queries, filter by both `billing_cycle` and `account_name` when needed.
-    # - `account_segment` values are: 'Enterprise', 'Mid-Market', 'SMB', 'Startup'.
-    # - `discount_sensitivity` values are: 'High', 'Medium', 'Low'.
+#     # **Rules:**
+#     # - `billing_cycle` and `year_month` are `character varying` columns in 'YYYY-MM' format (e.g., '2025-01'). Compare them directly without TO_CHAR.
+#     # - For CDR queries, use `timestamp` with `DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')` for last month.
+#     # - For dashboard_metrics queries, use `metric_date` for date filtering.
+#     # - For performance_analytics queries, filter by both `billing_cycle` and `account_name` when needed.
+#     # - `account_segment` values are: 'Enterprise', 'Mid-Market', 'SMB', 'Startup'.
+#     # - `discount_sensitivity` values are: 'High', 'Medium', 'Low'.
     
-    # **MVNE/Wholesale Rules:**
-    # - "MVNE", "MVNO", "Wholesale Provider", or "Operator" refers to the `wholesale_entities` table.
-    # - JOIN any `wholesale_` table with `wholesale_entities` e ON table.entity_id = e.id.
-    # - If user mentions "MVNO", "MNO", or "MVNA", filter `wholesale_entities.type` ILIKE that type.
-    # - **Service Types**: 'data_domestic' (Data), 'voice_domestic' (Voice), 'sms_mo' (SMS).
-    # - **Usage Columns**: In `monthly_consumption`, use `data_gb_used`, `voice_minutes_used`, `sms_count`.
-    # - **Plan Types**: 'Pool', 'PAYG' are common `plan_type` values in `wholesale_plans`.
-    # - **Date Consistency**: `year_month` (Wholesale) and `billing_cycle` (Retail) are both 'YYYY-MM'.
-    # - **Retail to Wholesale Link**: `billing_data.wholesale_plan_id` joins with `wholesale_plans.id`.
-    # - **IMPORTANT**: When returning results for MVNE/Wholesale queries, select ALL relevant informative columns (e.g., `year_month`, `grand_total`, `invoice_status`, `plan_name`, `usage_amount`) to provide a complete and precise table.
+#     # **MVNE/Wholesale Rules:**
+#     # - "MVNE", "MVNO", "Wholesale Provider", or "Operator" refers to the `wholesale_entities` table.
+#     # - JOIN any `wholesale_` table with `wholesale_entities` e ON table.entity_id = e.id.
+#     # - If user mentions "MVNO", "MNO", or "MVNA", filter `wholesale_entities.type` ILIKE that type.
+#     # - **Service Types**: 'data_domestic' (Data), 'voice_domestic' (Voice), 'sms_mo' (SMS).
+#     # - **Usage Columns**: In `monthly_consumption`, use `data_gb_used`, `voice_minutes_used`, `sms_count`.
+#     # - **Plan Types**: 'Pool', 'PAYG' are common `plan_type` values in `wholesale_plans`.
+#     # - **Date Consistency**: `year_month` (Wholesale) and `billing_cycle` (Retail) are both 'YYYY-MM'.
+#     # - **Retail to Wholesale Link**: `billing_data.wholesale_plan_id` joins with `wholesale_plans.id`.
+#     # - **IMPORTANT**: When returning results for MVNE/Wholesale queries, select ALL relevant informative columns (e.g., `year_month`, `grand_total`, `invoice_status`, `plan_name`, `usage_amount`) to provide a complete and precise table.
 
-    # **Few-Shot Examples:**
-    # - User: "Total cost trend for all MVNOs"
-    #   SQL: SELECT e.name AS "Entity Name", s.year_month, s.grand_total FROM wholesale_billing_summary s JOIN wholesale_entities e ON s.entity_id = e.id WHERE e.type ILIKE '%MVNO%' ORDER BY s.year_month ASC;
-    # - User: "Retail accounts linked to Transatel Wholesale Plan"
-    #   SQL: SELECT distinct b.account_name, p.plan_name FROM billing_data b JOIN wholesale_plans p ON b.wholesale_plan_id = p.id JOIN wholesale_entities e ON p.entity_id = e.id WHERE e.name ILIKE '%Transatel%';
-    # - User: "Top overage services for Vodafone last month"
-    #   SQL: SELECT service_type, SUM(billable_amount) as "Billable Overage" FROM wholesale_billing_records r JOIN wholesale_entities e ON r.entity_id = e.id WHERE e.name ILIKE '%Vodafone%' AND year_month = '2025-01' GROUP BY service_type ORDER BY "Billable Overage" DESC;
+#     # **Few-Shot Examples:**
+#     # - User: "Total cost trend for all MVNOs"
+#     #   SQL: SELECT e.name AS "Entity Name", s.year_month, s.grand_total FROM wholesale_billing_summary s JOIN wholesale_entities e ON s.entity_id = e.id WHERE e.type ILIKE '%MVNO%' ORDER BY s.year_month ASC;
+#     # - User: "Retail accounts linked to Transatel Wholesale Plan"
+#     #   SQL: SELECT distinct b.account_name, p.plan_name FROM billing_data b JOIN wholesale_plans p ON b.wholesale_plan_id = p.id JOIN wholesale_entities e ON p.entity_id = e.id WHERE e.name ILIKE '%Transatel%';
+#     # - User: "Top overage services for Vodafone last month"
+#     #   SQL: SELECT service_type, SUM(billable_amount) as "Billable Overage" FROM wholesale_billing_records r JOIN wholesale_entities e ON r.entity_id = e.id WHERE e.name ILIKE '%Vodafone%' AND year_month = '2025-01' GROUP BY service_type ORDER BY "Billable Overage" DESC;
 
-    # History: {history_str}
-    # Request: "{user_message}"
-    # Output: Only the SQL query, no explanations or extra text.
-    # - Avoid joins unless specifically required OR if it's an MVNE table that needs the entity name.
-    # - Use clear column aliases (e.g. SELECT name AS "Entity Name", grand_total AS "Total Amount").
-    # - For financial data, format currency with CONCAT('$', ROUND(amount, 2)).
-    # - For percentages, format with CONCAT(ROUND(percentage, 1), '%').
-    # """
-    # )
+#     # History: {history_str}
+#     # Request: "{user_message}"
+#     # Output: Only the SQL query, no explanations or extra text.
+#     # - Avoid joins unless specifically required OR if it's an MVNE table that needs the entity name.
+#     # - Use clear column aliases (e.g. SELECT name AS "Entity Name", grand_total AS "Total Amount").
+#     # - For financial data, format currency with CONCAT('$', ROUND(amount, 2)).
+#     # - For percentages, format with CONCAT(ROUND(percentage, 1), '%').
+#     # """
+#     # )
 
-    try:
-        if not gemini_model:
-            raise ValueError("Gemini model not available")
+#     try:
+#         if not gemini_model:
+#             raise ValueError("Gemini model not available")
             
-        response = gemini_model.generate_content(prompt)
-        sql_query = response.text.strip()
-        sql_query = re.sub(r"^```sql|```$", "", sql_query).strip()
+#         response = gemini_model.generate_content(prompt)
+#         sql_query = response.text.strip()
+#         sql_query = re.sub(r"^```sql|```$", "", sql_query).strip()
         
-        valid_starts = ("select", "update", "insert into", "with")
-        if not any(sql_query.lower().startswith(start) for start in valid_starts):
-            logger.error(f"Invalid SQL query generated by Gemini: {sql_query}")
-            raise ValueError("Invalid SQL query generated")
+#         valid_starts = ("select", "update", "insert into", "with")
+#         if not any(sql_query.lower().startswith(start) for start in valid_starts):
+#             logger.error(f"Invalid SQL query generated by Gemini: {sql_query}")
+#             raise ValueError("Invalid SQL query generated")
 
-        approx_tokens = len(prompt.split()) + len(sql_query.split())
-        update_token_usage(GEMINI_API_KEY, "gemini", approx_tokens)
+#         approx_tokens = len(prompt.split()) + len(sql_query.split())
+#         update_token_usage(GEMINI_API_KEY, "gemini", approx_tokens)
         
-        chat_cache[cache_key] = (sql_query, approx_tokens)
-        logger.info(f"Generated and cached SQL Query by Gemini: {sql_query}")
-        return sql_query
+#         chat_cache[cache_key] = (sql_query, approx_tokens)
+#         logger.info(f"Generated and cached SQL Query by Gemini: {sql_query}")
+#         return sql_query
         
-    except Exception as e:
-        logger.warning(f"Error generating SQL with Gemini: {e}. Falling back to OpenAI.")
-        if client:
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                sql_query = response.choices[0].message.content.strip()
-                sql_query = re.sub(r"^```sql|```$", "", sql_query).strip()
+#     except Exception as e:
+#         logger.warning(f"Error generating SQL with Gemini: {e}. Falling back to OpenAI.")
+#         if client:
+#             try:
+#                 response = client.chat.completions.create(
+#                     model="gpt-4o-mini",
+#                     messages=[{"role": "user", "content": prompt}]
+#                 )
+#                 sql_query = response.choices[0].message.content.strip()
+#                 sql_query = re.sub(r"^```sql|```$", "", sql_query).strip()
                 
-                chat_cache[cache_key] = (sql_query, 0)
-                logger.info(f"Generated and cached SQL Query by OpenAI: {sql_query}")
-                return sql_query
-            except Exception as oe:
-                logger.error(f"Error generating SQL with OpenAI fallback: {oe}", exc_info=True)
-                raise HTTPException(status_code=500, detail=f"Error generating SQL query with both Gemini and OpenAI. OpenAI Error: {str(oe)}")
+#                 chat_cache[cache_key] = (sql_query, 0)
+#                 logger.info(f"Generated and cached SQL Query by OpenAI: {sql_query}")
+#                 return sql_query
+#             except Exception as oe:
+#                 logger.error(f"Error generating SQL with OpenAI fallback: {oe}", exc_info=True)
+#                 raise HTTPException(status_code=500, detail=f"Error generating SQL query with both Gemini and OpenAI. OpenAI Error: {str(oe)}")
         
-        raise HTTPException(status_code=500, detail=f"Error generating SQL query: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Error generating SQL query: {str(e)}")
 
 
-def generate_analysis(query: str, data: list, history: list[Message]) -> str:
+# def generate_analysis(query: str, data: list, history: list[Message]) -> str:
+#     cache_key = hashlib.sha256(
+#         f"{query}:{str(data)}:{str(history)}".encode()
+#     ).hexdigest()
+
+#     if cache_key in chat_cache:
+#         cached_response, cached_tokens = chat_cache[cache_key]
+#         logger.info(
+#             f"Cache hit for analysis: '{query}', Key: {cache_key[:16]}..., Tokens saved (Gemini): {cached_tokens}"
+#         )
+#         return cached_response
+
+#     if not data:
+#         return "No historical data available for analysis."
+        
+#     data_str = "\n".join([", ".join([f"{k}: {v}" for k, v in d.items()]) for d in data])
+#     history_str = (
+#         "\n".join([f"{msg.role}: {msg.content[:100]}" for msg in history[-5:]])
+#         if history
+#         else "No history."
+#     )
+#     prompt = dedent(
+#           f"""
+#     Generate a valid PostgreSQL SQL query for the {operation} operation. The user may ask follow-up or context-aware questions.
+ 
+#     You must:
+#     - Use the history below to understand what the user is referring to.
+#     - If the user's request is vague (e.g. "those sims" or "the ones under BMW"), resolve meaning based on history.
+#     - Only use the schema provided below.
+#     - Avoid assuming non-existent columns or structures.
+#     - Output only the SQL query (no explanation, no markdown).
+#     Only use tables: {tables_str}.
+ 
+#     **Database Schema (Retail & Wholesale):**
+ 
+#     Retail Tables:
+#     - `cdr_data(id, sim_id, data_usage, network, timestamp, country, created_at)`
+#     - `billing_data(id, sim_id, account_name, rate_plan, total_usage, usage_from_plan, bundle_allowance, bundle_fee, usage_out_of_bundle, charges_out_of_bundle, total_bill, billing_cycle, wholesale_plan_id, created_at)`
+#     - `account_info(id, account_name, sim_id, rate_plan, billing_cycle, created_at)`
+#     - `rate_plan(rate_plan, bundle_allowance, bundle_fee, home_rate, row_rate, created_at)`
+ 
+#     Analytics Tables:
+#     - `dashboard_metrics(billing_cycle, metric_date, total_revenue, gross_profit, net_profit, total_opex, total_cogs, active_accounts, active_sims, new_accounts, lost_accounts, total_usage_gb, avg_cogs_per_account, avg_opex_per_account, accounts_receivable, ...)`
+#     - `performance_analytics(billing_cycle, metric_date, account_name, account_segment, payment_performance_score, churn_risk_score, ..., total_revenue, total_sims, total_usage_mb, ...)`
+ 
+#     Wholesale Tables (MVNE/MVNO Billing):
+#     - `wholesale_entities(id, name, type, country, currency, status, created_at)` 
+#       → e.g., 'Vodafone Wholesale', type='MNO'
+#     - `wholesale_plans(id, entity_id, plan_name, plan_type, start_date, end_date, revenue_share_pct, created_at)`
+#       → e.g., 'Vodafone Standard Pool 2025', plan_type='Capacity-Based'
+#     - `service_rates(id, plan_id, service_type, rate_per_unit, unit, overage_rate)`
+#       → service_type: 'data_domestic', 'voice_domestic', etc.
+#     - `plan_allowances(id, plan_id, service_type, allowance_amount, allowance_unit, period)`
+#     - `monthly_consumption(id, entity_id, plan_id, year_month, voice_minutes_used, sms_count, data_gb_used, created_at)`
+#     - `wholesale_billing_cycles(id, entity_id, cycle_start_date, cycle_end_date, billing_period, status, total_amount, created_at)`
+#     - `wholesale_billing_records(id, entity_id, plan_id, billing_cycle_id, year_month, service_type, allowance_amount, usage_amount, billable_amount, rate_applied, line_item_amount, created_at)`
+#     - `wholesale_billing_summary(id, entity_id, year_month, total_base_cost, total_overage_cost, grand_total, invoice_status, generated_at)`
+ 
+#     Common Queries Examples:
+#     - "Show me wholesale billing for Vodafone" → join wholesale_billing_summary + wholesale_entities
+#     - "What plans does EE have?" → wholesale_plans + wholesale_entities
+#     - "How much did we bill Gamma Telecom last month?" → wholesale_billing_summary
+#     - "Show overage charges for Transatel" → wholesale_billing_records where billable_amount > allowance
+ 
+#     Conversation History:
+#     {history_str}
+ 
+#     User Query: "{user_message}"
+ 
+#     Now generate only the SQL query.
+#     """
+        
+#         # f"""
+#     # Analyze or predict based on the query: "{query}"
+#     # Data (historical billing/usage): {data_str}
+#     # History: {history_str}
+#     # Provide a detailed analysis or prediction in a maximum of 200 words using $ for currency.
+#     # Base your prediction on historical trends from the provided data.
+#     # Format the response with clear paragraphs and markdown for emphasis.
+#     # - **First paragraph**: Introduce the query and summarize data.
+#     # - **Second paragraph**: Analyze trends and make the prediction.
+#     # - **Third paragraph**: Discuss limitations.
+#     # """
+#     )
+    
+#     if not gemini_model:
+#         return "Gemini analysis is currently unavailable."
+        
+#     try:
+#         response = gemini_model.generate_content(prompt)
+#         analysis = response.text.strip()
+        
+#         # Update token usage for Gemini
+#         tokens_used = response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else len(prompt) // 4
+#         update_token_usage(GEMINI_API_KEY or "GEMINI_KEY", "gemini", tokens_used)
+        
+#         lifetime = get_lifetime_totals(GEMINI_API_KEY)
+#         daily = token_usage_cache.get(
+#             datetime.datetime.now().strftime("%Y-%m-%d"), {}
+#         ).get(GEMINI_API_KEY, {"gemini": 0})["gemini"]
+#         logger.info(
+#             f"Gemini tokens used for query '{query}': {tokens_used}, Lifetime Gemini for key {GEMINI_API_KEY[:8]}...: {lifetime['gemini']}, Daily Gemini: {daily}"
+#         )
+
+#         chat_cache[cache_key] = (analysis, tokens_used)
+#         logger.info(
+#             f"Generated and cached analysis for query: '{query}', Cache Key: {cache_key[:16]}..."
+#         )
+#         return analysis
+#     except Exception as e:
+#         logger.error(f"Error generating analysis with ChatGPT: {e}")
+#         return f"Analysis error: {str(data)}"
+
+def generate_sql_query(user_message: str, history: List[Message], operation: str) -> str:
+    # Extract context
+    sim_id_match = re.search(r"sim\s*(\d+)", user_message, re.IGNORECASE)
+    sim_id = sim_id_match.group(1) if sim_id_match else "all"
+    time_period = resolve_time_period(user_message, datetime.datetime.now())
+    normalized_query = normalize_query(user_message)
+
+    # === CRITICAL: Define cache_key BEFORE using it ===
     cache_key = hashlib.sha256(
-        f"{query}:{str(data)}:{str(history)}".encode()
+        f"sql:{normalized_query}:{sim_id}:{time_period}:{operation}".encode()
     ).hexdigest()
 
     if cache_key in chat_cache:
-        cached_response, cached_tokens = chat_cache[cache_key]
-        logger.info(
-            f"Cache hit for analysis: '{query}', Key: {cache_key[:16]}..., Tokens saved (Gemini): {cached_tokens}"
-        )
-        return cached_response
+        cached_sql, tokens = chat_cache[cache_key]
+        logger.info(f"SQL Cache hit: {user_message[:50]}...")
+        return cached_sql
 
-    if not data:
-        return "No historical data available for analysis."
-        
-    data_str = "\n".join([", ".join([f"{k}: {v}" for k, v in d.items()]) for d in data])
-    history_str = (
-        "\n".join([f"{msg.role}: {msg.content[:100]}" for msg in history[-5:]])
-        if history
-        else "No history."
-    )
-    prompt = dedent(
-          f"""
-    Generate a valid PostgreSQL SQL query for the {operation} operation. The user may ask follow-up or context-aware questions.
- 
-    You must:
-    - Use the history below to understand what the user is referring to.
-    - If the user's request is vague (e.g. "those sims" or "the ones under BMW"), resolve meaning based on history.
-    - Only use the schema provided below.
-    - Avoid assuming non-existent columns or structures.
-    - Output only the SQL query (no explanation, no markdown).
-    Only use tables: {tables_str}.
- 
-    **Database Schema (Retail & Wholesale):**
- 
+    logger.info(f"SQL Cache miss: generating for '{user_message}'")
+
+    # Full schema prompt with EXACT columns for all tables
+    schema_details = """
+    EXACT Database Schema (use ONLY these tables and EXACT column names listed below. Do NOT invent or modify column names like adding 'total_' prefix):
+
     Retail Tables:
-    - `cdr_data(id, sim_id, data_usage, network, timestamp, country, created_at)`
-    - `billing_data(id, sim_id, account_name, rate_plan, total_usage, usage_from_plan, bundle_allowance, bundle_fee, usage_out_of_bundle, charges_out_of_bundle, total_bill, billing_cycle, wholesale_plan_id, created_at)`
-    - `account_info(id, account_name, sim_id, rate_plan, billing_cycle, created_at)`
-    - `rate_plan(rate_plan, bundle_allowance, bundle_fee, home_rate, row_rate, created_at)`
- 
+    - cdr_data: id SERIAL PRIMARY KEY, sim_id VARCHAR(255) NOT NULL, data_usage INT NOT NULL DEFAULT 0, network VARCHAR(255) NOT NULL, timestamp TIMESTAMP NOT NULL, country VARCHAR(255) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    - billing_data: id SERIAL PRIMARY KEY, sim_id VARCHAR(255) NOT NULL, account_name VARCHAR(255) NOT NULL, rate_plan VARCHAR(255) NOT NULL, total_usage INT NOT NULL DEFAULT 0, usage_from_plan INT NOT NULL DEFAULT 0, bundle_allowance INT NOT NULL DEFAULT 0, bundle_fee DECIMAL(10, 2) NOT NULL DEFAULT 0.00, usage_out_of_bundle INT NOT NULL DEFAULT 0, charges_out_of_bundle DECIMAL(10, 2) NOT NULL DEFAULT 0.00, total_bill DECIMAL(10, 2) NOT NULL DEFAULT 0.00, billing_cycle VARCHAR(7) NOT NULL, wholesale_plan_id INT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    - account_info: id SERIAL PRIMARY KEY, account_name VARCHAR(255) NOT NULL, sim_id VARCHAR(255) NOT NULL, rate_plan VARCHAR(255) NOT NULL, billing_cycle VARCHAR(7) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    - rate_plan: rate_plan VARCHAR(255) PRIMARY KEY, bundle_allowance INT NOT NULL DEFAULT 0, bundle_fee DECIMAL(10, 2) NOT NULL DEFAULT 0.00, home_rate DECIMAL(10, 4) NOT NULL DEFAULT 0.0000, row_rate DECIMAL(10, 4) NOT NULL DEFAULT 0.0000, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
     Analytics Tables:
-    - `dashboard_metrics(billing_cycle, metric_date, total_revenue, gross_profit, net_profit, total_opex, total_cogs, active_accounts, active_sims, new_accounts, lost_accounts, total_usage_gb, avg_cogs_per_account, avg_opex_per_account, accounts_receivable, ...)`
-    - `performance_analytics(billing_cycle, metric_date, account_name, account_segment, payment_performance_score, churn_risk_score, ..., total_revenue, total_sims, total_usage_mb, ...)`
- 
-    Wholesale Tables (MVNE/MVNO Billing):
-    - `wholesale_entities(id, name, type, country, currency, status, created_at)` 
-      → e.g., 'Vodafone Wholesale', type='MNO'
-    - `wholesale_plans(id, entity_id, plan_name, plan_type, start_date, end_date, revenue_share_pct, created_at)`
-      → e.g., 'Vodafone Standard Pool 2025', plan_type='Capacity-Based'
-    - `service_rates(id, plan_id, service_type, rate_per_unit, unit, overage_rate)`
-      → service_type: 'data_domestic', 'voice_domestic', etc.
-    - `plan_allowances(id, plan_id, service_type, allowance_amount, allowance_unit, period)`
-    - `monthly_consumption(id, entity_id, plan_id, year_month, voice_minutes_used, sms_count, data_gb_used, created_at)`
-    - `wholesale_billing_cycles(id, entity_id, cycle_start_date, cycle_end_date, billing_period, status, total_amount, created_at)`
-    - `wholesale_billing_records(id, entity_id, plan_id, billing_cycle_id, year_month, service_type, allowance_amount, usage_amount, billable_amount, rate_applied, line_item_amount, created_at)`
-    - `wholesale_billing_summary(id, entity_id, year_month, total_base_cost, total_overage_cost, grand_total, invoice_status, generated_at)`
- 
-    Common Queries Examples:
-    - "Show me wholesale billing for Vodafone" → join wholesale_billing_summary + wholesale_entities
-    - "What plans does EE have?" → wholesale_plans + wholesale_entities
-    - "How much did we bill Gamma Telecom last month?" → wholesale_billing_summary
-    - "Show overage charges for Transatel" → wholesale_billing_records where billable_amount > allowance
- 
-    Conversation History:
-    {history_str}
- 
-    User Query: "{user_message}"
- 
-    Now generate only the SQL query.
+    - dashboard_metrics: id SERIAL PRIMARY KEY, billing_cycle VARCHAR(7) NOT NULL UNIQUE, metric_date DATE NOT NULL, total_revenue DECIMAL(15,2) NOT NULL DEFAULT 0.00, gross_profit DECIMAL(15,2) NOT NULL DEFAULT 0.00, net_profit DECIMAL(15,2) NOT NULL DEFAULT 0.00, total_opex DECIMAL(15,2) NOT NULL DEFAULT 0.00, total_cogs DECIMAL(15,2) NOT NULL DEFAULT 0.00, active_accounts INTEGER NOT NULL DEFAULT 0, active_sims INTEGER NOT NULL DEFAULT 0, new_accounts INTEGER NOT NULL DEFAULT 0, lost_accounts INTEGER NOT NULL DEFAULT 0, total_usage_gb DECIMAL(15,2) NOT NULL DEFAULT 0.00, avg_cogs_per_account DECIMAL(10,2) NOT NULL DEFAULT 0.00, avg_opex_per_account DECIMAL(10,2) NOT NULL DEFAULT 0.00, accounts_receivable DECIMAL(15,2) NOT NULL DEFAULT 0.00, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    - performance_analytics: id SERIAL PRIMARY KEY, billing_cycle VARCHAR(7) NOT NULL, metric_date DATE NOT NULL, account_name VARCHAR(255) NOT NULL, account_segment VARCHAR(50) NOT NULL DEFAULT 'SMB', payment_performance_score DECIMAL(5,2) NOT NULL DEFAULT 0.00, churn_risk_score DECIMAL(5,2) NOT NULL DEFAULT 0.00, dispute_resolution_days DECIMAL(4,2) NOT NULL DEFAULT 0.00, avg_revenue_per_sim DECIMAL(10,2) NOT NULL DEFAULT 0.00, total_revenue DECIMAL(15,2) NOT NULL DEFAULT 0.00, profitability_score INTEGER NOT NULL DEFAULT 0, credit_utilization_percent DECIMAL(5,2) NOT NULL DEFAULT 0.00, discount_usage_percent DECIMAL(5,2) NOT NULL DEFAULT 0.00, avg_discount_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00, discount_sensitivity VARCHAR(20) NOT NULL DEFAULT 'Medium', optimal_discount_rate DECIMAL(5,2) NOT NULL DEFAULT 0.00, q3_forecast DECIMAL(15,2) NOT NULL DEFAULT 0.00, q4_forecast DECIMAL(15,2) NOT NULL DEFAULT 0.00, yoy_growth_forecast DECIMAL(5,2) NOT NULL DEFAULT 0.00, forecast_confidence_level DECIMAL(5,2) NOT NULL DEFAULT 0.00, total_sims INTEGER NOT NULL DEFAULT 0, total_usage_mb INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+    Wholesale Tables (MVNE/MVNO):
+    - wholesale_entities: id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL, type VARCHAR(50), country VARCHAR(100), currency VARCHAR(10) DEFAULT 'USD', status VARCHAR(50) DEFAULT 'active', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    - wholesale_plans: id SERIAL PRIMARY KEY, entity_id INT REFERENCES wholesale_entities(id), plan_name VARCHAR(255), plan_type VARCHAR(50), start_date DATE, end_date DATE, revenue_share_pct DECIMAL(5,2), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    - service_rates: id SERIAL PRIMARY KEY, plan_id INT REFERENCES wholesale_plans(id), service_type VARCHAR(50), rate_per_unit DECIMAL(10, 6), unit VARCHAR(20), overage_rate DECIMAL(10, 6)
+    - plan_allowances: id SERIAL PRIMARY KEY, plan_id INT REFERENCES wholesale_plans(id), service_type VARCHAR(50), allowance_amount DECIMAL(15, 2), allowance_unit VARCHAR(50), period VARCHAR(20) DEFAULT 'monthly'
+    - monthly_consumption: id SERIAL PRIMARY KEY, entity_id INT REFERENCES wholesale_entities(id), plan_id INT REFERENCES wholesale_plans(id), year_month VARCHAR(7), voice_minutes_used BIGINT, sms_count BIGINT, data_gb_used DECIMAL(15, 2), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    - wholesale_billing_cycles: id SERIAL PRIMARY KEY, entity_id INT REFERENCES wholesale_entities(id), cycle_start_date DATE, cycle_end_date DATE, billing_period VARCHAR(20), status VARCHAR(50), total_amount DECIMAL(15, 2), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    - wholesale_billing_records: id SERIAL PRIMARY KEY, entity_id INT REFERENCES wholesale_entities(id), plan_id INT REFERENCES wholesale_plans(id), billing_cycle_id INT REFERENCES wholesale_billing_cycles(id), year_month VARCHAR(7), service_type VARCHAR(50), allowance_amount DECIMAL(15, 2), usage_amount DECIMAL(15, 2), billable_amount DECIMAL(15, 2), rate_applied DECIMAL(10, 6), line_item_amount DECIMAL(15, 2), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    - wholesale_billing_summary: id SERIAL PRIMARY KEY, entity_id INT REFERENCES wholesale_entities(id), year_month VARCHAR(7), total_base_cost DECIMAL(15, 2), total_overage_cost DECIMAL(15, 2), grand_total DECIMAL(15, 2), invoice_status VARCHAR(50), generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     """
-        
-        # f"""
-    # Analyze or predict based on the query: "{query}"
-    # Data (historical billing/usage): {data_str}
-    # History: {history_str}
-    # Provide a detailed analysis or prediction in a maximum of 200 words using $ for currency.
-    # Base your prediction on historical trends from the provided data.
-    # Format the response with clear paragraphs and markdown for emphasis.
-    # - **First paragraph**: Introduce the query and summarize data.
-    # - **Second paragraph**: Analyze trends and make the prediction.
-    # - **Third paragraph**: Discuss limitations.
-    # """
-    )
-    
-    if not gemini_model:
-        return "Gemini analysis is currently unavailable."
-        
+
+    allowed_tables = [
+        "cdr_data", "billing_data", "account_info", "rate_plan",
+        "dashboard_metrics", "performance_analytics",
+        "wholesale_entities", "wholesale_plans", "service_rates",
+        "plan_allowances", "monthly_consumption",
+        "wholesale_billing_cycles", "wholesale_billing_records",
+        "wholesale_billing_summary"
+    ]
+
+    history_str = "\n".join([f"{m.role}: {m.content}" for m in history[-8:]]) if history else "None"
+
+    prompt = dedent(f"""
+    You are an expert PostgreSQL analyst for a telecom MVNO/MVNE platform.
+    Generate ONLY a valid PostgreSQL SELECT query based on the user question.
+    Do not explain, do not wrap in markdown. Output ONLY the SQL.
+
+    {schema_details}
+
+    Key rules:
+    - Use ONLY the EXACT column names listed above. Do NOT invent, modify, or add prefixes like 'total_' to columns (e.g., use 'data_gb_used' NOT 'total_data_gb').
+    - For aggregation like SUM, use SUM(column_name) where column_name is exact (e.g., SUM(data_gb_used) for data).
+    - For "last month" or "latest": use year_month = (SELECT MAX(year_month) FROM table)
+    - Always JOIN properly: e.g., wholesale_entities.id = wholesale_plans.entity_id
+    - Filter by name using LOWER(we.name) = LOWER('entity name') for case-insensitivity if needed.
+    - If summing across multiple rows/plans, use SUM() over the group.
+    - Return aggregated results if asking for totals.
+
+    Conversation history (for context):
+    {history_str}
+
+    User question: "{user_message}"
+
+    Generate only the SQL query.
+    """)
+
     try:
         response = gemini_model.generate_content(prompt)
-        analysis = response.text.strip()
-        
-        # Update token usage for Gemini
-        tokens_used = response.usage_metadata.total_token_count if hasattr(response, 'usage_metadata') else len(prompt) // 4
-        update_token_usage(GEMINI_API_KEY or "GEMINI_KEY", "gemini", tokens_used)
-        
-        lifetime = get_lifetime_totals(GEMINI_API_KEY)
-        daily = token_usage_cache.get(
-            datetime.datetime.now().strftime("%Y-%m-%d"), {}
-        ).get(GEMINI_API_KEY, {"gemini": 0})["gemini"]
-        logger.info(
-            f"Gemini tokens used for query '{query}': {tokens_used}, Lifetime Gemini for key {GEMINI_API_KEY[:8]}...: {lifetime['gemini']}, Daily Gemini: {daily}"
-        )
-
-        chat_cache[cache_key] = (analysis, tokens_used)
-        logger.info(
-            f"Generated and cached analysis for query: '{query}', Cache Key: {cache_key[:16]}..."
-        )
-        return analysis
+        sql = response.text.strip().replace('```sql', '').replace('```', '').strip()
+        if sql.upper().startswith("SELECT"):
+            # Cache only valid SELECTs
+            approx_tokens = len(prompt.split()) + len(sql.split())
+            chat_cache[cache_key] = (sql, approx_tokens)
+        return sql
     except Exception as e:
-        logger.error(f"Error generating analysis with ChatGPT: {e}")
-        return f"Analysis error: {str(data)}"
+        logger.error(f"Gemini SQL generation failed: {e}")
+        return "SELECT 'Error generating query' AS error;"
+    
+    
+def generate_analysis(query: str, data: list, history: List[Message]) -> str:
+    data_str = str(sorted(data)) if data else "no_data"
+    history_str = str([(m.role, m.content) for m in history[-6:]])
+    cache_key = hashlib.sha256(f"analysis:{query}:{data_str}:{history_str}".encode()).hexdigest()
+
+    if cache_key in chat_cache:
+        cached_resp, tokens = chat_cache[cache_key]
+        logger.info("Analysis cache hit")
+        return cached_resp
+
+    prompt = dedent(f"""
+    You are a senior telecom billing analyst.
+    Answer the user's question using the provided data in clear, professional English.
+    Use bullet points, highlight trends, risks, top performers.
+    For wholesale queries, mention entity names clearly.
+
+    Question: "{query}"
+    Data ({len(data)} records): {str(data[:15])}
+    History: {history_str[:500]}
+
+    Respond in markdown.
+    """)
+
+    try:
+        response = gemini_model.generate_content(prompt)
+        text = response.text.strip()
+        tokens = len(prompt.split()) + len(text.split())
+        chat_cache[cache_key] = (text, tokens)
+        return text
+    except Exception as e:
+        return f"Analysis failed: {str(e)}"
 
 
 async def stream_response(text: str):
