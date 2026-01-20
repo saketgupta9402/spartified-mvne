@@ -999,39 +999,117 @@ def generate_sql_query(user_message: str, history: List[Message], operation: str
     except Exception as e:
         logger.error(f"Gemini SQL generation failed: {e}")
         return "SELECT 'Error generating query' AS error;"
-    
-    
-def generate_analysis(query: str, data: list, history: List[Message]) -> str:
-    data_str = str(sorted(data)) if data else "no_data"
-    history_str = str([(m.role, m.content) for m in history[-6:]])
-    cache_key = hashlib.sha256(f"analysis:{query}:{data_str}:{history_str}".encode()).hexdigest()
 
+    
+ def generate_analysis(query: str, data: list, history: List[Message]) -> str:
+    """
+    Generate natural language analysis/insights from query + retrieved data using OpenAI.
+    Uses caching to avoid redundant LLM calls.
+    """
+    # Normalize inputs for consistent caching
+    data_str = str(sorted(data)) if data else "no_data"  # Make list order-independent
+    history_str = str([(msg.role, msg.content) for msg in history])
+
+    # Create cache key — defined BEFORE use
+    cache_key = hashlib.sha256(
+        f"analysis:{query}:{data_str}:{history_str}".encode()
+    ).hexdigest()
+
+    # Cache hit?
     if cache_key in chat_cache:
-        cached_resp, tokens = chat_cache[cache_key]
-        logger.info("Analysis cache hit")
-        return cached_resp
+        cached_response, cached_tokens = chat_cache[cache_key]
+        logger.info(
+            f"Cache hit for analysis: '{query[:50]}...', Key: {cache_key[:16]}..., "
+            f"Tokens saved (OpenAI): {cached_tokens}"
+        )
+        return cached_response
 
-    prompt = dedent(f"""
-    You are a senior telecom billing analyst.
-    Answer the user's question using the provided data in clear, professional English.
-    Use bullet points, highlight trends, risks, top performers.
-    For wholesale queries, mention entity names clearly.
+    # Cache miss → generate with OpenAI
+    logger.info(f"Cache miss for analysis: '{query[:50]}...', generating with OpenAI...")
 
-    Question: "{query}"
-    Data ({len(data)} records): {str(data[:15])}
-    History: {history_str[:500]}
+    # Build prompt (same as before, but as system message for OpenAI)
+    history_context = "\n".join([f"{msg.role}: {msg.content}" for msg in history[-6:]])  # Last 6 messages
+    data_preview = str(data[:10]) + ("..." if len(data) > 10 else "")  # Avoid huge prompts
 
-    Respond in markdown.
+    system_prompt = dedent(f"""
+    You are an expert telecom billing and performance analyst.
+    Provide clear, insightful, and professional analysis in natural language based on the user's question and the provided data.
+
+    User Question: "{query}"
+
+    Recent Conversation History (for context):
+    {history_context if history_context else "None"}
+
+    Data Retrieved from Database:
+    {data_preview}
+    (Total records: {len(data)})
+
+    Instructions:
+    - Answer directly and concisely.
+    - Highlight key trends, anomalies, top performers, risks.
+    - Use bullet points or numbered lists when helpful.
+    - If data is empty or insufficient, say so clearly.
+    - For wholesale/MVNE queries, mention entity names (e.g., Vodafone Wholesale, Gamma Telecom).
+    - Do NOT mention caching, tokens, or technical details.
+
+    Respond in markdown format for better readability.
     """)
 
     try:
-        response = gemini_model.generate_content(prompt)
-        text = response.text.strip()
-        tokens = len(prompt.split()) + len(text.split())
-        chat_cache[cache_key] = (text, tokens)
-        return text
+        # Use OpenAI instead of Gemini
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # Or "gpt-4o" for higher quality (more expensive)
+            messages=[{"role": "system", "content": system_prompt}],
+            temperature=0.7,  # Balanced creativity
+            max_tokens=1500   # Limit to avoid long responses
+        )
+        analysis_text = response.choices[0].message.content.strip()
+
+        # Token usage from OpenAI response
+        tokens_used = response.usage.total_tokens if response.usage else len(system_prompt.split()) + len(analysis_text.split())
+
+        # Cache the result
+        chat_cache[cache_key] = (analysis_text, tokens_used)
+
+        logger.info(f"Analysis generated and cached with OpenAI. Tokens used: {tokens_used}")
+        return analysis_text
+
     except Exception as e:
-        return f"Analysis failed: {str(e)}"
+        logger.error(f"Error generating analysis with OpenAI: {e}")
+        return f"Sorry, I couldn't generate an analysis right now. Error: {str(e)}"
+
+
+# def generate_analysis(query: str, data: list, history: List[Message]) -> str:
+#     data_str = str(sorted(data)) if data else "no_data"
+#     history_str = str([(m.role, m.content) for m in history[-6:]])
+#     cache_key = hashlib.sha256(f"analysis:{query}:{data_str}:{history_str}".encode()).hexdigest()
+
+#     if cache_key in chat_cache:
+#         cached_resp, tokens = chat_cache[cache_key]
+#         logger.info("Analysis cache hit")
+#         return cached_resp
+
+#     prompt = dedent(f"""
+#     You are a senior telecom billing analyst.
+#     Answer the user's question using the provided data in clear, professional English.
+#     Use bullet points, highlight trends, risks, top performers.
+#     For wholesale queries, mention entity names clearly.
+
+#     Question: "{query}"
+#     Data ({len(data)} records): {str(data[:15])}
+#     History: {history_str[:500]}
+
+#     Respond in markdown.
+#     """)
+
+#     try:
+#         response = gemini_model.generate_content(prompt)
+#         text = response.text.strip()
+#         tokens = len(prompt.split()) + len(text.split())
+#         chat_cache[cache_key] = (text, tokens)
+#         return text
+#     except Exception as e:
+#         return f"Analysis failed: {str(e)}"
 
 
 async def stream_response(text: str):
