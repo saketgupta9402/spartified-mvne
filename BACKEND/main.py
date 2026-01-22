@@ -96,16 +96,48 @@ if GEMINI_API_KEY:
     model_to_use = "gemini-2.5-flash"  # Reliable alternative
     gemini_model = genai.GenerativeModel(model_to_use)
     logger.info(f"Gemini initialized with {model_to_use}")
+
+
+# Pinecone Client (only initialize if key is present)
 pc = None
 index = None
 INDEX_NAME = "knowledge-base"
+
 if PINECONE_API_KEY:
     try:
         pc = Pinecone(api_key=PINECONE_API_KEY)
-        # Check if index exists - skip slow listing if possible or handle timeout
-        logger.info("Pinecone client initialized")
+        logger.info("Pinecone client initialized successfully")
+
+        # Parse PINECONE_ENV (e.g., "us-east-1-aws" → cloud="aws", region="us-east-1")
+        pinecone_env = os.getenv("PINECONE_ENV", "us-east-1-aws")
+        parts = pinecone_env.split('-')
+        region = '-'.join(parts[:-1])   # everything except last part
+        cloud = parts[-1]               # aws / gcp / azure
+
+        # Check if index exists and create if it doesn't
+        index_names = pc.list_indexes().names()
+        if INDEX_NAME not in index_names:
+            logger.info(f"Creating Pinecone index '{INDEX_NAME}' (dim=1024, cosine)")
+            pc.create_index(
+                name=INDEX_NAME,
+                dimension=1536,           # ← your value
+                metric="cosine",          # ← your value
+                spec=ServerlessSpec(
+                    cloud=cloud,
+                    region=region
+                )
+            )
+            logger.info(f"Index '{INDEX_NAME}' created successfully")
+        else:
+            logger.info(f"Index '{INDEX_NAME}' already exists")
+
+        # Connect to the index
+        index = pc.Index(INDEX_NAME)
+        logger.info(f"Successfully connected to Pinecone index '{INDEX_NAME}'")
+
     except Exception as e:
-        logger.error(f"Failed to initialize Pinecone client: {e}")
+        logger.error(f"Pinecone initialization / connection failed: {str(e)}")
+        # You can choose to continue running the app or raise
 else:
     logger.warning("Pinecone client not initialized - PINECONE_API_KEY not set")
 
@@ -162,6 +194,24 @@ def get_gemini_embeddings(chunks):
     except Exception as e:
         logger.error(f"Error getting Gemini embeddings: {e}")
         raise
+
+# def get_embeddings(texts: list[str]) -> list[list[float]]:
+#     """
+#     Generate 1024-dimensional embeddings using OpenAI text-embedding-3-small
+#     """
+#     if not client:
+#         raise ValueError("OpenAI client not initialized. Check OPENAI_API_KEY.")
+
+#     try:
+#         response = client.embeddings.create(
+#             model="text-embedding-3-small",   # ← 1024 dimensions, very good quality/price
+#             input=texts,
+#             encoding_format="float"
+#         )
+#         return [item.embedding for item in response.data]
+#     except Exception as e:
+#         logger.error(f"OpenAI embedding failed: {str(e)}")
+#         raise
 
 def get_openai_embeddings(chunks):
     """Fallback for OpenAI embeddings if needed, but primarily using Gemini now"""
@@ -393,6 +443,67 @@ class KnowledgeBaseRequest(BaseModel):
 
 
 # File upload and processing
+# @app.post("/upload_knowledge_base")
+# async def upload_knowledge_base(file: UploadFile = File(...)):
+#     """
+#     Upload PDF or DOCX → extract text → chunk → embed with OpenAI 1024-dim → upsert to Pinecone
+#     """
+#     if not index:
+#         raise HTTPException(
+#             status_code=503,  # Better status: Service Unavailable
+#             detail="Pinecone index not initialized. Check server logs and PINECONE_API_KEY."
+#         )
+
+#     try:
+#         # 1. Extract text
+#         if file.filename.lower().endswith(".pdf"):
+#             with pdfplumber.open(file.file) as pdf:
+#                 text = "".join(
+#                     (page.extract_text() or "") for page in pdf.pages
+#                 )
+#         elif file.filename.lower().endswith(".docx"):
+#             doc = Document(file.file)
+#             text = "\n".join(para.text for para in doc.paragraphs if para.text.strip())
+#         else:
+#             raise HTTPException(400, detail="Unsupported file type. Only PDF and DOCX allowed.")
+
+#         if not text.strip():
+#             raise HTTPException(400, detail="No readable text found in the file.")
+
+#         # 2. Chunk text
+#         chunks = text_splitter.split_text(text)
+#         if not chunks:
+#             raise HTTPException(400, detail="File content too small or empty after chunking.")
+
+#         # 3. Generate 1024-dim embeddings
+#         vectors = get_embeddings(chunks)
+
+#         # 4. Prepare Pinecone records
+#         records = []
+#         for i, (chunk, embedding) in enumerate(zip(chunks, vectors)):
+#             record_id = f"chunk_{hashlib.sha256(chunk.encode()).hexdigest()[:32]}"  # shorter but still unique
+#             metadata = {
+#                 "text": chunk,
+#                 "section": f"Section {i+1}",
+#                 "source": file.filename,
+#                 "chunk_index": i,
+#                 "chunk_length": len(chunk)
+#             }
+#             records.append((record_id, embedding, metadata))
+
+#         # 5. Upsert to Pinecone
+#         index.upsert(vectors=records)   # ← list of (id, vector, metadata) tuples
+
+#         logger.info(f"Successfully uploaded '{file.filename}' → {len(chunks)} chunks embedded and upserted")
+#         return PlainTextResponse("Knowledge base updated successfully")
+
+#     except Exception as e:
+#         logger.exception(f"Error processing file '{file.filename}': {str(e)}")
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Error processing file: {str(e)}"
+#         )
+# a    
 @app.post("/upload_knowledge_base")
 async def upload_knowledge_base(file: UploadFile = File(...)):
     if not index:
@@ -1001,7 +1112,7 @@ def generate_sql_query(user_message: str, history: List[Message], operation: str
         return "SELECT 'Error generating query' AS error;"
 
     
- def generate_analysis(query: str, data: list, history: List[Message]) -> str:
+def generate_analysis(query: str, data: list, history: List[Message]) -> str:
     """
     Generate natural language analysis/insights from query + retrieved data using OpenAI.
     Uses caching to avoid redundant LLM calls.
