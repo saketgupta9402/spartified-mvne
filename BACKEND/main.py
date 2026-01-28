@@ -3575,6 +3575,51 @@ async def get_dashboard_metrics(billing_cycle: Optional[str] = None):
         logger.error(f"Error in /analytics/dashboard: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+# ========================
+# AI CHATBOT CORE LOGIC (with Streaming)
+# ========================
+
+# Main chatbot endpoint with StreamingResponse
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest):
+    query = request.query
+    history = request.history
+
+    intent = classify_intent(query)
+    logger.info(f"Intent: {intent} | Query: {query}")
+
+    if intent == "modification":
+        return {"response": "Modifications not yet supported.", "data": []}
+
+    # Generate SQL (non-streaming, as it's quick)
+    sql = generate_sql_query(query, history, "SELECT")
+    logger.info(f"Generated SQL: {sql}")
+
+    # Execute query
+    result = fetch_data(sql)
+    if not result:
+        result = [{"message": "No data found for your query."}]
+
+    # For data/analysis: Generate analysis and stream the full response
+    async def stream_response():
+        # Yield initial data/sql (non-streamed part)
+        yield json.dumps({
+            "sql": sql,
+            "data": result,
+            "intent": intent
+        }) + "\n"
+
+        # Stream the analysis if needed
+        if intent in ["data", "analysis"] and len(result) > 0:
+            analysis = generate_analysis(query, result, history)  # Assuming generate_analysis returns a string
+            # If generate_analysis supports streaming (e.g. OpenAI/Gemini stream), yield chunks here
+            # For now, yield the full analysis as one chunk
+            yield json.dumps({"analysis": analysis}) + "\n"
+        else:
+            yield json.dumps({"analysis": "Here is the data you requested:"}) + "\n"
+
+    return StreamingResponse(stream_response(), media_type="application/json")
+
 if __name__ == "__main__":
     import uvicorn
 
